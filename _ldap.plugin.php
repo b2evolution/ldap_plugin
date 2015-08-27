@@ -368,7 +368,7 @@ class ldap_plugin extends Plugin
 
 
 	/**
-	 * We need the raw password to compare it.
+	 * We need the RAW password to bind to LDAP servers.
 	 * @return true
 	 */
 	function LoginAttemptNeedsRawPassword()
@@ -376,69 +376,4 @@ class ldap_plugin extends Plugin
 		return true;
 	}
 }
-
-
-/*
- * $Log: _ldap.plugin.php,v $
- * Revision 1.40  2006/11/27 19:05:56  blueyed
- * Added "disabled" setting for LDAP server set entries. Bumped version to 2.0-dev.
- *
- * Revision 1.39  2006/11/09 22:27:20  blueyed
- * Needs raw pwd
- *
- * Revision 1.38  2006/10/16 08:39:10  blueyed
- * Merged fixes from v-1-9 branch
- *
- * Revision 1.37  2006/09/10 14:17:26  blueyed
- * trans fix
- *
- * Revision 1.36  2006/08/19 08:50:27  fplanque
- * moved out some more stuff from main
- *
- * Revision 1.35  2006/08/19 07:56:32  fplanque
- * Moved a lot of stuff out of the automatic instanciation in _main.inc
- *
- * Revision 1.34  2006/08/07 16:49:35  fplanque
- * doc
- *
- * Revision 1.33  2006/08/07 09:57:50  blueyed
- * doc
- *
- * Revision 1.32  2006/07/31 16:53:52  blueyed
- * better example
- *
- * Revision 1.31  2006/07/31 16:40:03  blueyed
- * Fixed creating new group, based on template.
- *
- * Revision 1.30  2006/07/20 19:40:36  blueyed
- * Simplified code/minor
- *
- * Revision 1.29  2006/07/10 20:41:54  blueyed
- * Fixed PluginInit behaviour. It now gets called on both installed and non-installed Plugins, but with the "is_installed" param appropriately set.
- *
- * Revision 1.28  2006/07/07 21:26:49  blueyed
- * Bumped to 1.9-dev
- *
- * Revision 1.27  2006/07/06 19:56:29  fplanque
- * no message
- *
- * Revision 1.26  2006/06/18 01:14:03  blueyed
- * lazy instantiate user's group; normalisation
- *
- * Revision 1.25  2006/06/16 21:30:57  fplanque
- * Started clean numbering of plugin versions (feel free do add dots...)
- *
- * Revision 1.24  2006/05/30 19:39:55  fplanque
- * plugin cleanup
- *
- * Revision 1.23  2006/04/24 15:43:37  fplanque
- * no message
- *
- * Revision 1.22  2006/04/22 02:36:39  blueyed
- * Validate users on registration through email link (+cleanup around it)
- *
- * Revision 1.21  2006/04/11 21:22:26  fplanque
- * partial cleanup
- *
- */
 ?>
