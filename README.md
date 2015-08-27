@@ -2,4 +2,4 @@
 
 Authenticate users through LDAP during login
 
-This is the last version made available by Daniel Hahler.
+This is a revised version for b2evolution v6.

@@ -43,8 +43,8 @@ class ldap_plugin extends Plugin
 {
 	var $code = 'evo_ldap_auth';
 	var $priority = 50;
-	var $version = '2.1-beta';
-	var $author = 'dAniel hAhler';
+	var $version = '6.0-beta';
+	var $author = 'dAniel hAhler + b2evolution group';
 
 
 	/**
@@ -80,7 +80,7 @@ class ldap_plugin extends Plugin
 					),
 					'base_dn' => array(
 						'label' => T_('Base DN'),
-						'note' => T_('The LDAP base DN, used as base dn for search.').' '.sprintf( T_('E.g. &laquo;%s&raquo;'), 'cn=Recipients,ou=organization unit,o=Organisation' ),
+						'note' => T_('The LDAP base DN, used as base DN to search for detailed user info after binding.').' '.sprintf( T_('E.g. &laquo;%s&raquo;'), 'cn=Recipients,ou=organization unit,o=Organisation' ),
 						'size' => 40,
 					),
 					'search_filter' => array(
@@ -103,6 +103,7 @@ class ldap_plugin extends Plugin
 						'label' => T_('Disabled'),
 						'defaultvalue' => 0,
 						'type' => 'checkbox',
+						'note' => T_('Check to disable this LDAP server.'),
 					),
 				),
 			),
@@ -110,7 +111,7 @@ class ldap_plugin extends Plugin
 			'fallback_grp_ID' => array(
 				'label' => T_('Default group'),
 				'type' => 'select_group',
-				'note' => T_('The group to use as fallback, if we do not want to create a new group. "None" to not create a new user in that case.' ),
+				'note' => T_('The group to use as fallback when not creating a group depending on user attributes. "None" to not create a new user in that case.' ),
 				'allow_none' => true,
 				'defaultvalue' => isset($Settings) ? $Settings->get('newusers_grp_ID') : NULL,
 			),
@@ -121,8 +122,7 @@ class ldap_plugin extends Plugin
 	/**
 	 * Event handler: called when a user attemps to login.
 	 *
-	 * This function will check if the user is in the LDAP and create it locally if it does
-	 * not exist yet.
+	 * This function will check if the user exists in the LDAP and create it locally if it does not.
 	 *
 	 * @param array 'login', 'pass' and 'pass_md5'
 	 */
@@ -131,12 +131,19 @@ class ldap_plugin extends Plugin
 		global $localtimenow;
 		global $Settings, $Hit;
 
+		$this->debug_log( sprintf('LDAP plugin will attempt to login with %s / %s / %s', $params['login'], $params['pass'], $params['pass_md5']) );
+
 		$UserCache = & get_Cache( 'UserCache' );
-		if( ( $local_User = & $UserCache->get_by_login( $params['login'] ) )
-				&& $local_User->pass == $params['pass_md5'] )
-		{ // User exist (with this password), do nothing
-			$this->debug_log( 'User already exists locally with this password.' );
-			return true;
+		if( $local_User = & $UserCache->get_by_login( $params['login'] ) )
+		{
+			$this->debug_log( 'User already exists locally...' );
+			// Now check if there is a password match:
+	 		if( $local_User->pass == md5( $local_User->salt.$params['pass'], true ) )
+			{ // User exist (with this password), do nothing
+				$this->debug_log( 'Entered password matches locally encrypted password. Accept login as is.' );
+				// fp> QUESTION: do we really want to accept this without verifying with LDAP?
+				return true;
+			}
 		}
 
 		$search_sets = $this->Settings->get( 'search_sets' );
@@ -147,16 +154,17 @@ class ldap_plugin extends Plugin
 			return false;
 		}
 
-		// Authenticate against LDAP
+		// Authenticate against LDAP:
 		if( !function_exists( 'ldap_connect' ) )
 		{
 			$this->debug_log( 'LDAP does not seem to be compiled into PHP.' );
 			return false;
 		}
 
-		// Loop through list of search sets
+		// Loop through list of search sets:
 		foreach( $search_sets as $l_set )
 		{
+			// --- CONNECT TO SERVER ---
 			$server_port = explode(':', $l_set['server']);
 			$server = $server_port[0];
 			$port = isset($server_port[1]) ? $server_port[1] : 389;
@@ -174,17 +182,26 @@ class ldap_plugin extends Plugin
 			}
 			$this->debug_log( 'Connected to server &laquo;'.$server.':'.$port.'&raquo;..' );
 
-			$ldap_rdn = str_replace( '%s', $params['login'], $l_set['rdn'] );
-			$this->debug_log( 'Using rdn &laquo;'.$ldap_rdn.'&raquo;..' );
 
+			// --- SET PROTOCOL VERSION ---
+			// Let's tell PHP to use LDAP protocol verison 3:
+			ldap_set_option($ldap_conn, LDAP_OPT_PROTOCOL_VERSION, 3);
+
+			$ldap_rdn = str_replace( '%s', $params['login'], $l_set['rdn'] );
+			$this->debug_log( 'Using RDN &laquo;'.$ldap_rdn.'&raquo; for binding...' );
+
+
+			// --- VERIFY USER CREDENTIALS BY BINDING TO SERVER ---
+			// you might use this for testing with Apache DS;:if( !@ldap_bind($ldap_conn, 'uid=admin,ou=system', 'secret') )
 			if( !@ldap_bind($ldap_conn, $ldap_rdn, $params['pass']) )
 			{
-				$this->debug_log( 'Could not bind to LDAP server!' );
+				$this->debug_log( 'Could not bind to LDAP server : '.ldap_error($ldap_conn) );
 				continue;
 			}
-
 			$this->debug_log( 'User successfully bound to server.' );
 
+
+			// --- TRY TO OBTAIN MORE INFO ABOUT USER ---
 			// Search user info
 			$search_result = ldap_search(
 					$ldap_conn,
@@ -194,8 +211,8 @@ class ldap_plugin extends Plugin
 			$search_info = ldap_get_entries($ldap_conn, $search_result);
 
 			if( $search_info['count'] != 1 )
-			{ // nicht nur ein bzw kein Eintrag gefunden
-				$this->debug_log( 'Found '.$search_info['count'].' entries with search!' );
+			{ // We have found 0 or more than 1 users, which is a problem...
+				$this->debug_log( '# of entries found with search: '.$search_info['count'] );
 
 				/*
 				for ($i=0; $i<$search_info["count"]; $i++) {
@@ -204,25 +221,36 @@ class ldap_plugin extends Plugin
 					echo "first email entry: ". $search_info[$i]["mail"][0] ."<p>";
 				}
 				*/
+				continue;
 			}
 			$this->debug_log( 'search_info: <pre>'.var_export( $search_info, true ).'</pre>' );
 
+	
+			// --- UPDATE USER ACCOUNT IN B2EVO IF IT EXISTS ---		
 			if( $local_User )
 			{ // User exists already locally, but password does not match the LDAP one. Update it locally.
-				$local_User->set( 'pass', $params['pass_md5'] );
+				$local_User->set_password( $params['pass']);
 				$local_User->dbupdate();
 
-				$this->debug_log( 'Updating user password locally.' );
+				$this->debug_log( 'Updating (enrypted) user password locally.' );
+
+				// fp> the way this exists here prevents from updating data from LDAP (group?)
 
 				return true;
 			}
 
-			// create this user locally (in b2evo)
+
+			// --- CREATE USER ACCOUNT IN B2EVO ---
+			// This will try to use the following attributes from the LDAP search:
+			// - givenname
+			// - sn
+			// - mail
+			// 
 			$NewUser = new User();
 			$NewUser->set( 'login', $params['login'] );
 			$NewUser->set( 'nickname', $params['login'] );
-			$NewUser->set( 'pass', $params['pass_md5'] );
-			$NewUser->set( 'status', 'autoactivated' ); // assume the user has been validated (through email link)
+			$NewUser->set_password( $params['pass']);
+			$NewUser->set( 'status', 'autoactivated' ); // Activate the user automatically (no email activation necessary)
 
 			if( isset($search_info[0]['givenname'][0]) )
 			{
@@ -236,10 +264,12 @@ class ldap_plugin extends Plugin
 			{
 				$NewUser->set_email( $search_info[0]['mail'][0] );
 			}
+
 			$NewUser->set( 'locale', locale_from_httpaccept() ); // use the browser's locale
 			$NewUser->set_datecreated( $localtimenow );
-			$NewUser->set( 'level', 1 );
+			// $NewUser->set( 'level', 1 );
 
+			// Ty to assign group from the search results:
 			$assigned_group = false;
 			if( ! empty($l_set['assign_user_to_group_by']) )
 			{
@@ -291,7 +321,7 @@ class ldap_plugin extends Plugin
 			}
 
 			if( ! $assigned_group )
-			{ // Default group
+			{ // Default group:
 				$users_Group = NULL;
 				$fallback_grp_ID = $this->Settings->get( 'fallback_grp_ID' );
 
