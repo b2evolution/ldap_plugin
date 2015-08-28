@@ -4,7 +4,7 @@
  *
  * This file is part of the b2evolution project - {@link http://b2evolution.net/}.
  *
- * Documentation can be found at {@link http://manual.b2evolution.net/Plugins/ldap_plugin}.
+ * Documentation can be found at {@link http://plugins.b2evolution.net/ldap-plugin}.
  *
  * @copyright (c)2003-2015 by Francois PLANQUE - {@link http://fplanque.net/}
  * Parts of this file are copyright (c)2004-2007 by Daniel HAHLER - {@link http://thequod.de/contact}.
@@ -18,9 +18,6 @@
  * }}
  *
  * @package plugins
- *
- * @author blueyed: Daniel HAHLER
- *
  */
 if( !defined('EVO_MAIN_INIT') ) die( 'Please, do not access this page directly.' );
 
