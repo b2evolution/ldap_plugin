@@ -434,9 +434,17 @@ class ldap_plugin extends Plugin
 			{
 				$this->debug_log( 'NOT created user, because no group has been assigned.' );
 			}
+			if( isset($initial_protocol_version) )
+			{
+				ldap_set_option($ldap_conn, LDAP_OPT_PROTOCOL_VERSION, $initial_protocol_version);
+			}
 			return true;
 		}
 
+		if( isset($initial_protocol_version) )
+		{
+			ldap_set_option($ldap_conn, LDAP_OPT_PROTOCOL_VERSION, $initial_protocol_version);
+		}
 		return false;
 	}
 
