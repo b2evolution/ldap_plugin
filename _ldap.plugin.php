@@ -6,8 +6,8 @@
  *
  * Documentation can be found at {@link http://manual.b2evolution.net/Plugins/ldap_plugin}.
  *
- * @copyright (c)2003-2006 by Francois PLANQUE - {@link http://fplanque.net/}
- * Parts of this file are copyright (c)2004-2005 by Daniel HAHLER - {@link http://thequod.de/contact}.
+ * @copyright (c)2003-2015 by Francois PLANQUE - {@link http://fplanque.net/}
+ * Parts of this file are copyright (c)2004-2007 by Daniel HAHLER - {@link http://thequod.de/contact}.
  *
  * @license http://b2evolution.net/about/license.html GNU General Public License (GPL)
  *
@@ -21,7 +21,6 @@
  *
  * @author blueyed: Daniel HAHLER
  *
- * @version $Id: _ldap.plugin.php,v 1.40 2006/11/27 19:05:56 blueyed Exp $
  */
 if( !defined('EVO_MAIN_INIT') ) die( 'Please, do not access this page directly.' );
 
@@ -41,9 +40,10 @@ if( !defined('EVO_MAIN_INIT') ) die( 'Please, do not access this page directly.'
  */
 class ldap_plugin extends Plugin
 {
+	var $version = '6.1-beta';
+	var $group = 'authentication';
 	var $code = 'evo_ldap_auth';
 	var $priority = 50;
-	var $version = '6.0-beta';
 	var $author = 'dAniel hAhler + b2evolution group';
 
 
@@ -99,6 +99,16 @@ class ldap_plugin extends Plugin
 						'note' => T_('The group to use as template, if we create a new group. Set this to "None" to not create new groups.'),
 						'allow_none' => true,
 					),
+					'protocol_version' => array(
+						'label' => $this->T_('LDAP protocol version'),
+						'type'  => 'select',
+						'options' => array(
+							'auto' => $this->T_('automatic'),
+							'v3' => $this->T_('Version 3'),
+							'v2' => $this->T_('Version 2')
+						),
+						'note' => $this->T_('A specific protocol version, or "auto" for "current one, then 3 and 2".'),
+					),
 					'disabled' => array(
 						'label' => T_('Disabled'),
 						'defaultvalue' => 0,
@@ -131,7 +141,7 @@ class ldap_plugin extends Plugin
 		global $localtimenow;
 		global $Settings, $Hit;
 
-		$this->debug_log( sprintf('LDAP plugin will attempt to login with %s / %s / %s', $params['login'], $params['pass'], $params['pass_md5']) );
+		// $this->debug_log( sprintf('LDAP plugin will attempt to login with %s / %s / %s', $params['login'], $params['pass'], $params['pass_md5']) );
 
 		$UserCache = & get_Cache( 'UserCache' );
 		if( $local_User = & $UserCache->get_by_login( $params['login'] ) )
@@ -182,37 +192,96 @@ class ldap_plugin extends Plugin
 			}
 			$this->debug_log( 'Connected to server &laquo;'.$server.':'.$port.'&raquo;..' );
 
-
-			// --- SET PROTOCOL VERSION ---
-			// Let's tell PHP to use LDAP protocol verison 3:
-			ldap_set_option($ldap_conn, LDAP_OPT_PROTOCOL_VERSION, 3);
-
 			$ldap_rdn = str_replace( '%s', $params['login'], $l_set['rdn'] );
 			$this->debug_log( 'Using RDN &laquo;'.$ldap_rdn.'&raquo; for binding...' );
+
+			// --- SET PROTOCOL VERSION ---
+			// Get protocol version to use:
+			if( ! ldap_get_option($ldap_conn, LDAP_OPT_PROTOCOL_VERSION, $initial_protocol_version) )
+			{
+				$this->debug_log( 'Failed to get LDAP_OPT_PROTOCOL_VERSION.' );
+				$initial_protocol_version = null;
+			}
+			$protocol_version = isset($l_set['protocol_version']) ? $l_set['protocol_version'] : 'auto'; // new setting in 2.01
+
+			if( $protocol_version[0] == 'v' )
+			{ // transform "vX" => "X"
+				$try_versions = array( substr($protocol_version, 1) );
+			}
+			else
+			{ // "auto"
+				$try_versions = array(3, 2);
+				if( isset($initial_protocol_version) )
+				{
+					array_unshift($try_versions, $initial_protocol_version);
+				}
+				$try_versions = array_unique($try_versions);
+			}
+			$this->debug_log( 'Trying protocol versions: '.implode(', ', $try_versions) );
+
 
 
 			// --- VERIFY USER CREDENTIALS BY BINDING TO SERVER ---
 			// you might use this for testing with Apache DS;:if( !@ldap_bind($ldap_conn, 'uid=admin,ou=system', 'secret') )
-			if( !@ldap_bind($ldap_conn, $ldap_rdn, $params['pass']) )
+			// Bind:
+			$bound = false;
+			$bind_errors = array();
+			foreach( $try_versions as $try_version )
 			{
-				$this->debug_log( 'Could not bind to LDAP server : '.ldap_error($ldap_conn) );
+				ldap_set_option($ldap_conn, LDAP_OPT_PROTOCOL_VERSION, $try_version);
+				if( @ldap_bind($ldap_conn, $ldap_rdn, $params['pass']) )
+				{
+					$bound = true;
+					break;
+				}
+				$bind_errors[ $try_version ] = array(ldap_error($ldap_conn), ldap_errno($ldap_conn));
+			}
+			if( ! $bound )
+			{
+				$error_details = array();
+				foreach( $bind_errors as $k => $v )
+				{
+					$error_details[] = "\"$v[0]\" ($v[1]) (protocol version $k)";
+				}
+				$error_details = implode("; ", $error_details);
+				if( strlen($error_details) )
+				{
+					$error_details = "Error(s): $error_details";
+				}
+				else
+				{
+					$error_details = "No error details.";
+				}
+				$this->debug_log( "Could not bind to LDAP server! $error_details" );
+
+				if( isset($initial_protocol_version) )
+				{
+					ldap_set_option($ldap_conn, LDAP_OPT_PROTOCOL_VERSION, $initial_protocol_version);
+				}
 				continue;
 			}
+
 			$this->debug_log( 'User successfully bound to server.' );
 
 
 			// --- TRY TO OBTAIN MORE INFO ABOUT USER ---
 			// Search user info
-			$search_result = ldap_search(
-					$ldap_conn,
-					$l_set['base_dn'],
-					str_replace( '%s', $params['login'], $l_set['search_filter'] ) );
+			$filter = str_replace( '%s', $params['login'], $l_set['search_filter'] );
+			$this->debug_log( sprintf( 'Searching for user info. base_dn: %s, filter: %s', $l_set['base_dn'], $filter ) );
+			$search_result = ldap_search( $ldap_conn, $l_set['base_dn'], $filter );
+
+			if( ! $search_result )
+			{ // this may happen with an empty base_dn
+				$this->debug_log( 'Invalid ldap_search result. Skipping.' );
+				continue;
+			}
 
 			$search_info = ldap_get_entries($ldap_conn, $search_result);
+			$this->debug_log( 'search_info: <pre>'.var_export( $search_info, true ).'</pre>' );
 
 			if( $search_info['count'] != 1 )
 			{ // We have found 0 or more than 1 users, which is a problem...
-				$this->debug_log( '# of entries found with search: '.$search_info['count'] );
+				$this->debug_log( '# of entries found with search: '.$search_info['count'].'Skipping' );
 
 				/*
 				for ($i=0; $i<$search_info["count"]; $i++) {
@@ -223,7 +292,7 @@ class ldap_plugin extends Plugin
 				*/
 				continue;
 			}
-			$this->debug_log( 'search_info: <pre>'.var_export( $search_info, true ).'</pre>' );
+			//$this->debug_log( 'search_info: <pre>'.var_export( $search_info, true ).'</pre>' );
 
 	
 			// --- UPDATE USER ACCOUNT IN B2EVO IF IT EXISTS ---		
@@ -236,6 +305,11 @@ class ldap_plugin extends Plugin
 
 				// fp> the way this exists here prevents from updating data from LDAP (group?)
 
+				if( isset($initial_protocol_version) )
+				{
+					ldap_set_option($ldap_conn, LDAP_OPT_PROTOCOL_VERSION, $initial_protocol_version);
+				}
+				
 				return true;
 			}
 
