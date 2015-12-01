@@ -138,7 +138,7 @@ class ldap_plugin extends Plugin
 		global $localtimenow;
 		global $Settings, $Hit;
 
-		// $this->debug_log( sprintf('LDAP plugin will attempt to login with %s / %s / %s', $params['login'], $params['pass'], $params['pass_md5']) );
+		$this->debug_log( sprintf('LDAP plugin will attempt to login with login=%s / pass=%s / MD5 pass=%s', $params['login'], $params['pass'], $params['pass_md5']) );
 
 		$UserCache = & get_Cache( 'UserCache' );
 		if( $local_User = & $UserCache->get_by_login( $params['login'] ) )
@@ -149,6 +149,7 @@ class ldap_plugin extends Plugin
 			{ // User exist (with this password), do nothing
 				$this->debug_log( 'Entered password matches locally encrypted password. Accept login as is.' );
 				// fp> QUESTION: do we really want to accept this without verifying with LDAP?
+				// Answer: No
 				return true;
 			}
 		}
@@ -168,9 +169,11 @@ class ldap_plugin extends Plugin
 			return false;
 		}
 
-		// Loop through list of search sets:
-		foreach( $search_sets as $l_set )
+		// Loop through list of configured LDAP search sets:
+		foreach( $search_sets as $l_id=>$l_set )
 		{
+			$this->debug_log( 'STARTING LDAP AUTH WITH SEARCH SET #'.$l_id );
+
 			// --- CONNECT TO SERVER ---
 			$server_port = explode(':', $l_set['server']);
 			$server = $server_port[0];
@@ -191,6 +194,7 @@ class ldap_plugin extends Plugin
 
 			$ldap_rdn = str_replace( '%s', $params['login'], $l_set['rdn'] );
 			$this->debug_log( 'Using RDN &laquo;'.$ldap_rdn.'&raquo; for binding...' );
+
 
 			// --- SET PROTOCOL VERSION ---
 			// Get protocol version to use:
@@ -214,45 +218,34 @@ class ldap_plugin extends Plugin
 				}
 				$try_versions = array_unique($try_versions);
 			}
-			$this->debug_log( 'Trying protocol versions: '.implode(', ', $try_versions) );
-
+			$this->debug_log( 'We will try protocol versions: '.implode(', ', $try_versions) );
 
 
 			// --- VERIFY USER CREDENTIALS BY BINDING TO SERVER ---
-			// you might use this for testing with Apache DS;:if( !@ldap_bind($ldap_conn, 'uid=admin,ou=system', 'secret') )
+			// you might use this for testing with Apache DS: if( !@ldap_bind($ldap_conn, 'uid=admin,ou=system', 'secret') )
 			// Bind:
 			$bound = false;
 			$bind_errors = array();
 			foreach( $try_versions as $try_version )
 			{
+				$this->debug_log( sprintf('Trying to connect with protocol version: %s / RDN: %s / pass: %s', $try_version, $ldap_rdn, $params['pass'] ) );
 				ldap_set_option($ldap_conn, LDAP_OPT_PROTOCOL_VERSION, $try_version);
 				if( @ldap_bind($ldap_conn, $ldap_rdn, $params['pass']) )
-				{
+				{ // Success
+					$this->debug_log( 'Binding worked.' );
 					$bound = true;
 					break;
 				}
-				$bind_errors[ $try_version ] = array(ldap_error($ldap_conn), ldap_errno($ldap_conn));
-			}
-			if( ! $bound )
-			{
-				$error_details = array();
-				foreach( $bind_errors as $k => $v )
-				{
-					$error_details[] = "\"$v[0]\" ($v[1]) (protocol version $k)";
-				}
-				$error_details = implode("; ", $error_details);
-				if( strlen($error_details) )
-				{
-					$error_details = "Error(s): $error_details";
-				}
 				else
 				{
-					$error_details = "No error details.";
+					$this->debug_log( 'Binding failed. Errno: '.ldap_errno($ldap_conn).' Error: '.ldap_error($ldap_conn) );
 				}
-				$this->debug_log( "Could not bind to LDAP server! $error_details" );
+			}
 
+			if( ! $bound )
+			{
 				if( isset($initial_protocol_version) )
-				{
+				{	// Reset this for the next search set:
 					ldap_set_option($ldap_conn, LDAP_OPT_PROTOCOL_VERSION, $initial_protocol_version);
 				}
 				continue;
@@ -265,11 +258,10 @@ class ldap_plugin extends Plugin
 			// Search user info
 			$filter = str_replace( '%s', $params['login'], $l_set['search_filter'] );
 			$this->debug_log( sprintf( 'Searching for user info. base_dn: %s, filter: %s', $l_set['base_dn'], $filter ) );
-			$search_result = ldap_search( $ldap_conn, $l_set['base_dn'], $filter );
-
+			$search_result = @ldap_search( $ldap_conn, $l_set['base_dn'], $filter );
 			if( ! $search_result )
 			{ // this may happen with an empty base_dn
-				$this->debug_log( 'Invalid ldap_search result. Skipping.' );
+					$this->debug_log( 'Invalid ldap_search result. Skipping to next search set. Errno: '.ldap_errno($ldap_conn).' Error: '.ldap_error($ldap_conn) );
 				continue;
 			}
 
