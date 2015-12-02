@@ -25,10 +25,15 @@ if( !defined('EVO_MAIN_INIT') ) die( 'Please, do not access this page directly.'
 /**
  * LDAP authentification plugin.
  *
- * It handles the event 'LoginAttempt' and creates an user locally if it
- * could bind to the LDAP server with the login and password of the user that
- * is trying to login.
- * It will update the password locally in case it differs from the LDAP one.
+ * It handles the event 'LoginAttempt' and tries to bind to one or several LDAP servers with 
+ * the login and password of the user who is trying to login.
+ *
+ * If successfully bound, the plugin will query for additional info about the user.
+ *
+ * - A b2evolution user will be created with a random password that will never be told to the user. 
+ *   This forces the user to always use a valid LDAP account for subsequent connections.
+ * @todo don't show option to change passwords to LDAP users
+ * - User account info will be updated at each login. A new random password will also be regenerated (just in case)
  *
  * @todo Register tools tab to search in LDAP (blueyed).
  * @todo Add setting subsets, which allow to map User object properties (dropdown) to LDAP search result entries (what's now hardcoded with "sn", "givenname" and "email")
@@ -37,11 +42,11 @@ if( !defined('EVO_MAIN_INIT') ) die( 'Please, do not access this page directly.'
  */
 class ldap_plugin extends Plugin
 {
-	var $version = '6.1-beta';
+	var $version = '6.2-beta';
 	var $group = 'authentication';
 	var $code = 'evo_ldap_auth';
 	var $priority = 50;
-	var $author = 'dAniel hAhler + b2evolution group';
+	var $author = 'b2evolution Group (original plugin by Daniel Hahler)';
 
 
 	/**
@@ -129,7 +134,7 @@ class ldap_plugin extends Plugin
 	/**
 	 * Event handler: called when a user attemps to login.
 	 *
-	 * This function will check if the user exists in the LDAP and create it locally if it does not.
+	 * This function will check if the user exists in the LDAP directory and create it locally if it does not.
 	 *
 	 * @param array 'login', 'pass' and 'pass_md5'
 	 */
@@ -145,6 +150,7 @@ class ldap_plugin extends Plugin
 		{
 			$this->debug_log( 'User already exists locally...' );
 			// Now check if there is a password match:
+/*
 	 		if( $local_User->pass == md5( $local_User->salt.$params['pass'], true ) )
 			{ // User exist (with this password), do nothing
 				$this->debug_log( 'Entered password matches locally encrypted password. Accept login as is.' );
@@ -152,6 +158,7 @@ class ldap_plugin extends Plugin
 				// Answer: No
 				return true;
 			}
+*/
 		}
 
 		$search_sets = $this->Settings->get( 'search_sets' );
@@ -283,16 +290,45 @@ class ldap_plugin extends Plugin
 			}
 			//$this->debug_log( 'search_info: <pre>'.var_export( $search_info, true ).'</pre>' );
 
-	
+
+			// --- AT THIS POINT, WE CONSIDER THE LOGIN ATTEMPT TO BE SUCCESSFUL AND WE ACCEPT IT ---
+			// Update this value which has been passed by REFERENCE:
+			$params['pass_ok'] = true;
+
+
 			// --- UPDATE USER ACCOUNT IN B2EVO IF IT EXISTS ---		
 			if( $local_User )
-			{ // User exists already locally, but password does not match the LDAP one. Update it locally.
+			{ // User exists already exists
+
+				// Make some updates:
+				$local_User->set( 'nickname', $params['login'] );
+				// Generate a random password (in case it has been set to something known): (we never want LDAP users to be able to login without a prior LDAP check)
+				$local_User->set_password( generate_random_passwd( 32 ) );  // $params['pass'] );
+				$local_User->set( 'status', 'autoactivated' ); // Activate the user automatically (no email activation necessary)
+
+				if( isset($search_info[0]['givenname'][0]) )
+				{
+					$local_User->set( 'firstname', $search_info[0]['givenname'][0] );
+				}
+				if( isset($search_info[0]['sn'][0]) )
+				{
+					$local_User->set( 'lastname', $search_info[0]['sn'][0] );
+				}
+				if( isset($search_info[0]['mail'][0]) )
+				{
+					$local_User->set_email( $search_info[0]['mail'][0] );
+				}
+					
+				/*
+				//  locally, but password does not match the LDAP one. Update it locally.
 				$local_User->set_password( $params['pass']);
-				$local_User->dbupdate();
 
 				$this->debug_log( 'Updating (enrypted) user password locally.' );
-
+	
 				// fp> the way this exists here prevents from updating data from LDAP (group?)
+				*/
+
+				$local_User->dbupdate();
 
 				if( isset($initial_protocol_version) )
 				{
@@ -312,7 +348,8 @@ class ldap_plugin extends Plugin
 			$NewUser = new User();
 			$NewUser->set( 'login', $params['login'] );
 			$NewUser->set( 'nickname', $params['login'] );
-			$NewUser->set_password( $params['pass']);
+			// Generate a random password: (we never want LDAP users to be able to login without a prior LDAP check)
+			$NewUser->set_password( generate_random_passwd( 32 ) );  // $params['pass'] );
 			$NewUser->set( 'status', 'autoactivated' ); // Activate the user automatically (no email activation necessary)
 
 			if( isset($search_info[0]['givenname'][0]) )
@@ -434,7 +471,8 @@ class ldap_plugin extends Plugin
 		{
 			ldap_set_option($ldap_conn, LDAP_OPT_PROTOCOL_VERSION, $initial_protocol_version);
 		}
-		return false;
+
+		return false; // Login failed!
 	}
 
 
