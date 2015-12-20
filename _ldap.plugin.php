@@ -42,7 +42,7 @@ if( !defined('EVO_MAIN_INIT') ) die( 'Please, do not access this page directly.'
  */
 class ldap_plugin extends Plugin
 {
-	var $version = '6.2-beta';
+	var $version = '6.3-beta';
 	var $group = 'authentication';
 	var $code = 'evo_ldap_auth';
 	var $priority = 50;
@@ -65,28 +65,28 @@ class ldap_plugin extends Plugin
 
 		return array(
 			'search_sets' => array(
-				'label' => T_('LDAP server sets'),
-				'note' => T_('LDAP server sets to search.'),
+				'label' => T_('LDAP servers to check'),
+				'note' => T_('This plugin can search a username sequentially on several different LDAP servers / with different LDAP queries.'),
 				'type' => 'array',
 				'max_count' => 10,
 				'entries' => array(
 					'server' => array(
-						'label' => T_('Server'),
-						'note' => T_('The LDAP server (hostname with or without port).').' '.sprintf( T_('E.g. &laquo;%s&raquo;'), 'hostname:389' ),
+						'label' => T_('LDAP Server'),
+						'note' => T_('Hostname with or without port').' '.sprintf( T_('E.g. &laquo;%s&raquo;'), 'ldap.example.com:389' ),
 						'size' => 30,
 					),
 					'rdn' => array(
-						'label' => T_('RDN'),
+						'label' => T_('RDN for binding/authenticating'),
 						'note' => T_('The LDAP RDN, used to bind to the server (%s gets replaced by the user login).').' '.sprintf( T_('E.g. &laquo;%s&raquo;'), 'cn=%s,ou=organization unit,o=Organisation' ),
 						'size' => 40,
 					),
 					'base_dn' => array(
-						'label' => T_('Base DN'),
+						'label' => T_('User Details - Base DN'),
 						'note' => T_('The LDAP base DN, used as base DN to search for detailed user info after binding.').' '.sprintf( T_('E.g. &laquo;%s&raquo;'), 'cn=Recipients,ou=organization unit,o=Organisation' ),
 						'size' => 40,
 					),
 					'search_filter' => array(
-						'label' => T_('Search filter'),
+						'label' => T_('User Details - Search filter'),
 						'note' => T_('The search filter used to get information about the user (%s gets replaced by the user login).').' '.sprintf( T_('E.g. &laquo;%s&raquo;'), 'uid=%s' ),
 						'size' => 40,
 					),
@@ -143,43 +143,38 @@ class ldap_plugin extends Plugin
 		global $localtimenow;
 		global $Settings, $Hit;
 
-		$this->debug_log( sprintf('LDAP plugin will attempt to login with login=%s / pass=%s / MD5 pass=%s', $params['login'], $params['pass'], $params['pass_md5']) );
+		// Check if LDAP is available:
+		if( !function_exists( 'ldap_connect' ) )
+		{
+			$this->debug_log( 'This PHP installation does not support LDAP functions.' );
+			return false; // Login failed!
+		}
 
+		// Get ready to go through ALL LDAP Servers configured in the plugin:
+		$search_sets = $this->Settings->get( 'search_sets' );
+		if( empty($search_sets) )
+		{
+			$this->debug_log( 'No LDAP servers have been configured in the LDAP plugin settings.' );
+			return false; // Login failed!
+		}
+
+		// Detect if we already have a local user with the same login:
 		$UserCache = & get_Cache( 'UserCache' );
 		if( $local_User = & $UserCache->get_by_login( $params['login'] ) )
 		{
-			$this->debug_log( 'User already exists locally...' );
-			// Now check if there is a password match:
-/*
-	 		if( $local_User->pass == md5( $local_User->salt.$params['pass'], true ) )
-			{ // User exist (with this password), do nothing
-				$this->debug_log( 'Entered password matches locally encrypted password. Accept login as is.' );
-				// fp> QUESTION: do we really want to accept this without verifying with LDAP?
-				// Answer: No
-				return true;
-			}
-*/
+			$this->debug_log( 'User <b>'.$params['login'].'</b> already exists locally. We will UPDATE it with the latest LDAP attibutes.' );
+			$update_mode = true;
 		}
+		else
+			$update_mode = false;
 
-		$search_sets = $this->Settings->get( 'search_sets' );
 
-		if( empty($search_sets) )
-		{
-			$this->debug_log( 'No LDAP search sets defined.' );
-			return false;
-		}
+		$this->debug_log( sprintf('LDAP plugin will attempt to login with login=<b>%s</b> / pass=<b>%s</b> / MD5 pass=<b>%s</b>', $params['login'], $params['pass'], $params['pass_md5']) );
 
-		// Authenticate against LDAP:
-		if( !function_exists( 'ldap_connect' ) )
-		{
-			$this->debug_log( 'LDAP does not seem to be compiled into PHP.' );
-			return false;
-		}
-
-		// Loop through list of configured LDAP search sets:
+		// ------ Loop through list of configured LDAP Servers: ------
 		foreach( $search_sets as $l_id=>$l_set )
 		{
-			$this->debug_log( 'STARTING LDAP AUTH WITH SEARCH SET #'.$l_id );
+			$this->debug_log( 'Step 1 : STARTING LDAP AUTH WITH SERVER #'.$l_id );
 
 			// --- CONNECT TO SERVER ---
 			$server_port = explode(':', $l_set['server']);
@@ -261,24 +256,23 @@ class ldap_plugin extends Plugin
 			$this->debug_log( 'User successfully bound to server.' );
 
 
-			// --- TRY TO OBTAIN MORE INFO ABOUT USER ---
+			// --- STEP 2 : TRY TO OBTAIN MORE INFO ABOUT USER ---
 			// Search user info
 			$filter = str_replace( '%s', $params['login'], $l_set['search_filter'] );
-			$this->debug_log( sprintf( 'Searching for user info. base_dn: %s, filter: %s', $l_set['base_dn'], $filter ) );
+			$this->debug_log( sprintf( 'Step 2 : Now querying for additional user info. base_dn: <b>%s</b>, filter: <b>%s</b>', $l_set['base_dn'], $filter ) );
 			$search_result = @ldap_search( $ldap_conn, $l_set['base_dn'], $filter );
 			if( ! $search_result )
 			{ // this may happen with an empty base_dn
-					$this->debug_log( 'Invalid ldap_search result. Skipping to next search set. Errno: '.ldap_errno($ldap_conn).' Error: '.ldap_error($ldap_conn) );
+				$this->debug_log( 'Invalid ldap_search result. Skipping to next search set. Errno: '.ldap_errno($ldap_conn).' Error: '.ldap_error($ldap_conn) );
 				continue;
 			}
 
 			$search_info = ldap_get_entries($ldap_conn, $search_result);
-			$this->debug_log( 'search_info: <pre>'.var_export( $search_info, true ).'</pre>' );
+			//$this->debug_log( 'Results returned by LDAP Server: <pre>'.var_export( $search_info, true ).'</pre>' );
 
 			if( $search_info['count'] != 1 )
 			{ // We have found 0 or more than 1 users, which is a problem...
-				$this->debug_log( '# of entries found with search: '.$search_info['count'].'Skipping' );
-
+				$this->debug_log( '# of entries found with search: '.$search_info['count'].' - Skipping...' );
 				/*
 				for ($i=0; $i<$search_info["count"]; $i++) {
 					echo "dn: ". $search_info[$i]["dn"] ."<br>";
@@ -288,183 +282,264 @@ class ldap_plugin extends Plugin
 				*/
 				continue;
 			}
-			//$this->debug_log( 'search_info: <pre>'.var_export( $search_info, true ).'</pre>' );
+			$this->debug_log( 'User info has been found.' );
 
-
-			// --- AT THIS POINT, WE CONSIDER THE LOGIN ATTEMPT TO BE SUCCESSFUL AND WE ACCEPT IT ---
-			// Update this value which has been passed by REFERENCE:
-			$params['pass_ok'] = true;
-
-
-			// --- UPDATE USER ACCOUNT IN B2EVO IF IT EXISTS ---		
-			if( $local_User )
+			// --- CREATE OR UPDATE USER ACCOUNT IN B2EVO ---
+			if( $update_mode == false )
+			{
+				$this->debug_log( 'Step 3 : Creating a local user in b2evolution...' );
+				$local_User = new User();
+				$local_User->set( 'login', $params['login'] );
+		
+				$local_User->set( 'locale', locale_from_httpaccept() ); // use the browser's locale
+				$local_User->set_datecreated( $localtimenow );
+				// $local_User->set( 'level', 1 );
+			}
+			else
 			{ // User exists already exists
+				$this->debug_log( 'Step 3 : Updating the existing local user.' );
+			}
 
-				// Make some updates:
+			$this->debug_log( 'Randomize password in b2evolution DB and autoactivate user.' );
+			// Generate a random password (we never want LDAP users to be able to login without a prior LDAP check) (also on update, just in case...
+			$local_User->set_password( generate_random_passwd( 32 ) );  // $params['pass'] );
+
+			$local_User->set( 'status', 'autoactivated' ); // Activate the user automatically (no email activation necessary)
+
+			// Make some updates:
+
+			// mail -> email:
+			if( isset($search_info[0]['mail'][0]))
+			{
+				$local_User->set_email( $search_info[0]['mail'][0] );
+			}
+				
+			// uid -> nickname
+			if( isset($search_info[0]['uid'][0]))
+			{
+				$this->debug_log( 'UID: <b>'.$search_info[0]['uid'][0].'</b>' );
+				$local_User->set( 'nickname', $search_info[0]['uid'][0] );
+			}
+			else
+			{	// if not found, use login.
 				$local_User->set( 'nickname', $params['login'] );
-				// Generate a random password (in case it has been set to something known): (we never want LDAP users to be able to login without a prior LDAP check)
-				$local_User->set_password( generate_random_passwd( 32 ) );  // $params['pass'] );
-				$local_User->set( 'status', 'autoactivated' ); // Activate the user automatically (no email activation necessary)
+			}
 
-				if( isset($search_info[0]['givenname'][0]) )
-				{
-					$local_User->set( 'firstname', $search_info[0]['givenname'][0] );
-				}
-				if( isset($search_info[0]['sn'][0]) )
-				{
-					$local_User->set( 'lastname', $search_info[0]['sn'][0] );
-				}
-				if( isset($search_info[0]['mail'][0]) )
-				{
-					$local_User->set_email( $search_info[0]['mail'][0] );
-				}
-					
-				/*
-				//  locally, but password does not match the LDAP one. Update it locally.
-				$local_User->set_password( $params['pass']);
+			// givenname -> Firstname:
+			if( isset($search_info[0]['givenname'][0]))
+			{
+				$this->debug_log( 'First name (givenname): <b>'.$search_info[0]['givenname'][0].'</b>' );
+				$local_User->set( 'firstname', $search_info[0]['givenname'][0] );
+			}
 
-				$this->debug_log( 'Updating (enrypted) user password locally.' );
-	
-				// fp> the way this exists here prevents from updating data from LDAP (group?)
-				*/
+			// sn -> Lastname:
+			if( isset($search_info[0]['sn'][0]))
+			{
+				$this->debug_log( 'Last name (sn): <b>'.$search_info[0]['sn'][0].'</b>' );
+				$local_User->set( 'lastname', $search_info[0]['sn'][0] );
+			}
 
+			// roomnumber -> user field "roomnumber" (if not found, autocreate it in group "Address")
+			if( isset($search_info[0]['roomnumber'][0]))
+			{
+				$this->debug_log( 'Room number: <b>'.$search_info[0]['roomnumber'][0].'</b>' );
+				// TODO: custom field
+				// $local_User->userfield_update_by_code( 'roomnumber', $search_info[0]['roomnumber'][0], 'Address', 'Room Number' );
+			}
+
+			// businesscategory -> user field "businesscategory" (if not found, autocreate it in group "About me")
+			if( isset($search_info[0]['businesscategory'][0]))
+			{
+				$this->debug_log( 'Business Category: <b>'.$search_info[0]['businesscategory'][0].'</b>' );
+				// TODO: custom field
+				// $local_User->userfield_update_by_code( 'businesscategory', $search_info[0]['telephonenumber'][0], 'About Me', 'Business Category' );
+			}
+
+			// telephonenumber -> user field "officephone" (if not found, autocreate it in group "Phone")
+			if( isset($search_info[0]['telephonenumber'][0]))
+			{
+				$this->debug_log( 'Office phone: <b>'.$search_info[0]['telephonenumber'][0].'</b>' );
+				// TODO: custom field
+				// $local_User->userfield_update_by_code( 'officephone', $search_info[0]['telephonenumber'][0], 'Phone', 'Office phone' );
+			}
+
+			// mobile -> user field "cellphone" (if not found, autocreate it in group "Phone")
+			if( isset($search_info[0]['mobile'][0]))
+			{
+				$this->debug_log( 'Cell phone: <b>'.$search_info[0]['mobile'][0].'</b>' );
+				// TODO: custom field
+				// $local_User->userfield_update_by_code( 'cellphone', $search_info[0]['mobile'][0], 'Phone', 'Cell phone' );
+			}
+
+			// employeenumber -> user field "employeenumber" (if not found, autocreate it in group "About me")
+			if( isset($search_info[0]['employeenumber'][0]))
+			{
+				$this->debug_log( 'Employee number: <b>'.$search_info[0]['employeenumber'][0].'</b>' );
+				// TODO: custom field
+				// $local_User->userfield_update_by_code( 'employeenumber', $search_info[0]['employeenumber'][0], 'About me', 'Employee number' );
+			}
+
+			// departmentnumber -> join Organization with the same name (create if doesn't exist)
+			if( isset($search_info[0]['departmentnumber'][0]))
+			{
+				$this->debug_log( 'Department Number: <b>'.$search_info[0]['departmentnumber'][0].'</b>' );
+				// TODO: create/join organization
+			}
+
+			// o -> join Organization with the same name (create if doesn't exist)
+			if( isset($search_info[0]['o'][0]))
+			{
+				$this->debug_log( 'Organization: <b>'.$search_info[0]['o'][0].'</b>' );
+				// TODO: create/join organization
+			}
+
+			// title -> user field "title" (if not found, autocreate it in group "About me")
+			if( isset($search_info[0]['title'][0]))
+			{
+				$this->debug_log( 'Title: <b>'.$search_info[0]['title'][0].'</b>' );
+				// TODO: custom field
+				// $local_User->userfield_update_by_code( 'title', $search_info[0]['telephonenumber'][0], 'About Me', 'Title' );
+			}
+
+			// telexnumber -> user field "officefax" (if not found, autocreate it in group "Phone")
+			if( isset($search_info[0]['telexnumber'][0]))
+			{
+				$this->debug_log( 'Office FAX: <b>'.$search_info[0]['telexnumber'][0].'</b>' );
+				// TODO: custom field
+				// $local_User->userfield_update_by_code( 'officefax', $search_info[0]['telexnumber'][0], 'Phone', 'Office FAX' );
+			}
+
+			// jpegphoto -> Save as profile pictue "ldap.jpeg" and associate with user
+			if( isset($search_info[0]['jpegphoto'][0]))
+			{
+				$this->debug_log( 'Photo: <img src="data:image/jpeg;base64,'.base64_encode($search_info[0]['jpegphoto'][0]).'" />' );
+				// TODO: save to disk and attach to user
+			}
+
+
+			// ---- GROUP STUFF ----
+			if( $update_mode == false )
+			{
+				// Try to assign group from the search results:
+				$assigned_group = false;
+				if( ! empty($l_set['assign_user_to_group_by']) )
+				{
+					$this->debug_log( 'We want to assign the Group by &laquo;'.$l_set['assign_user_to_group_by'].'&raquo;' );
+					if( isset($search_info[0][$l_set['assign_user_to_group_by']])
+							&& isset($search_info[0][$l_set['assign_user_to_group_by']][0]) )
+					{ // There is info we want to assign by
+						$assign_by_value = $search_info[0][$l_set['assign_user_to_group_by']][0];
+						$this->debug_log( 'The users info has &laquo;'.$assign_by_value.'&raquo; as value given.' );
+
+						$GroupCache = & get_Cache( 'GroupCache' );
+						if( $users_Group = & $GroupCache->get_by_name( $assign_by_value, false ) )
+						{ // A group with the users value returned exists.
+							$local_User->set_Group( $users_Group );
+							$assigned_group = true;
+							$this->debug_log( 'Adding User to existing Group.' );
+						}
+						else
+						{
+							$this->debug_log( 'Group with that name does not exist.' );
+
+							if( $l_set['tpl_new_grp_ID'] )
+							{ // we want to create a new group matching the assign-by info
+								$this->debug_log( 'Template Group given, trying to create new group based on that.' );
+
+								if( $new_Group = $GroupCache->get_by_ID( $l_set['tpl_new_grp_ID'], false ) ) // COPY!! and do not halt on error
+								{ // take a copy of the Group to use as template
+									$this->debug_log( 'Using Group &laquo;'.$new_Group->get('name').'&raquo; (#'.$l_set['tpl_new_grp_ID'].') as template.' );
+									$new_Group->set( 'ID', 0 ); // unset ID (to allow inserting)
+									$new_Group->set( 'name', $assign_by_value ); // set the wanted name
+									$new_Group->dbinsert();
+									$this->debug_log( 'Created Group &laquo;'.$new_Group->get('name').'&raquo;' );
+									$this->debug_log( 'Assigned User to new Group.' );
+
+									$local_User->set_Group( $new_Group );
+									$assigned_group = true;
+								}
+								else
+								{
+									$this->debug_log( 'Template Group with ID #'.$l_set['tpl_new_grp_ID'].' not found!' );
+								}
+							}
+							else
+							{
+								$this->debug_log( 'No template group for creating a new group configured.' );
+							}
+						}
+					}
+				}
+
+				if( ! $assigned_group )
+				{ // Default group:
+					$users_Group = NULL;
+					$fallback_grp_ID = $this->Settings->get( 'fallback_grp_ID' );
+
+					if( empty($fallback_grp_ID) )
+					{
+						$this->debug_log( 'No default/fallback group given.' );
+					}
+					else
+					{
+						$GroupCache = & get_Cache( 'GroupCache' );
+						$users_Group = & $GroupCache->get_by_ID($fallback_grp_ID);
+
+						if( $users_Group )
+						{ // either $this->default_group_name is not given or wrong
+							$local_User->set_Group( $users_Group );
+							$assigned_group = true;
+
+							$this->debug_log( 'Using default/fallback group ('.$users_Group->get('name').').' );
+						}
+						else
+						{
+							$this->debug_log( 'Default/fallback group not existing ('.$fallback_grp_ID.').' );
+						}
+					}
+
+				}
+
+				if( $assigned_group )
+				{
+					$local_User->dbinsert();
+					$UserCache->add( $local_User );
+					$this->debug_log( 'OK -- User has been created.' );
+
+					if( isset($initial_protocol_version) )
+					{
+						ldap_set_option($ldap_conn, LDAP_OPT_PROTOCOL_VERSION, $initial_protocol_version);
+					}
+
+					// --- AT THIS POINT, WE CONSIDER THE LOGIN ATTEMPT TO BE SUCCESSFUL AND WE ACCEPT IT ---
+					// Update this value which has been passed by REFERENCE:
+					$params['pass_ok'] = true;
+
+					return true; // Login was a success
+				}
+				else
+				{
+					$this->debug_log( 'User NOT created, because no group has been assigned.' );
+				}
+			}
+			else
+			{	// Updating existing user
 				$local_User->dbupdate();
+				$this->debug_log( 'OK -- User has been updated.' );
 
 				if( isset($initial_protocol_version) )
 				{
 					ldap_set_option($ldap_conn, LDAP_OPT_PROTOCOL_VERSION, $initial_protocol_version);
 				}
-				
-				return true;
+
+				// --- AT THIS POINT, WE CONSIDER THE LOGIN ATTEMPT TO BE SUCCESSFUL AND WE ACCEPT IT ---
+				// Update this value which has been passed by REFERENCE:
+				$params['pass_ok'] = true;
+
+				return true; // Login was a success
 			}
 
-
-			// --- CREATE USER ACCOUNT IN B2EVO ---
-			// This will try to use the following attributes from the LDAP search:
-			// - givenname
-			// - sn
-			// - mail
-			// 
-			$NewUser = new User();
-			$NewUser->set( 'login', $params['login'] );
-			$NewUser->set( 'nickname', $params['login'] );
-			// Generate a random password: (we never want LDAP users to be able to login without a prior LDAP check)
-			$NewUser->set_password( generate_random_passwd( 32 ) );  // $params['pass'] );
-			$NewUser->set( 'status', 'autoactivated' ); // Activate the user automatically (no email activation necessary)
-
-			if( isset($search_info[0]['givenname'][0]) )
-			{
-				$NewUser->set( 'firstname', $search_info[0]['givenname'][0] );
-			}
-			if( isset($search_info[0]['sn'][0]) )
-			{
-				$NewUser->set( 'lastname', $search_info[0]['sn'][0] );
-			}
-			if( isset($search_info[0]['mail'][0]) )
-			{
-				$NewUser->set_email( $search_info[0]['mail'][0] );
-			}
-
-			$NewUser->set( 'locale', locale_from_httpaccept() ); // use the browser's locale
-			$NewUser->set_datecreated( $localtimenow );
-			// $NewUser->set( 'level', 1 );
-
-			// Ty to assign group from the search results:
-			$assigned_group = false;
-			if( ! empty($l_set['assign_user_to_group_by']) )
-			{
-				$this->debug_log( 'We want to assign the Group by &laquo;'.$l_set['assign_user_to_group_by'].'&raquo;' );
-				if( isset($search_info[0][$l_set['assign_user_to_group_by']])
-						&& isset($search_info[0][$l_set['assign_user_to_group_by']][0]) )
-				{ // There is info we want to assign by
-					$assign_by_value = $search_info[0][$l_set['assign_user_to_group_by']][0];
-					$this->debug_log( 'The users info has &laquo;'.$assign_by_value.'&raquo; as value given.' );
-
-					$GroupCache = & get_Cache( 'GroupCache' );
-					if( $users_Group = & $GroupCache->get_by_name( $assign_by_value, false ) )
-					{ // A group with the users value returned exists.
-						$NewUser->set_Group( $users_Group );
-						$assigned_group = true;
-						$this->debug_log( 'Adding User to existing Group.' );
-					}
-					else
-					{
-						$this->debug_log( 'Group with that name does not exist.' );
-
-						if( $l_set['tpl_new_grp_ID'] )
-						{ // we want to create a new group matching the assign-by info
-							$this->debug_log( 'Template Group given, trying to create new group based on that.' );
-
-							if( $new_Group = $GroupCache->get_by_ID( $l_set['tpl_new_grp_ID'], false ) ) // COPY!! and do not halt on error
-							{ // take a copy of the Group to use as template
-								$this->debug_log( 'Using Group &laquo;'.$new_Group->get('name').'&raquo; (#'.$l_set['tpl_new_grp_ID'].') as template.' );
-								$new_Group->set( 'ID', 0 ); // unset ID (to allow inserting)
-								$new_Group->set( 'name', $assign_by_value ); // set the wanted name
-								$new_Group->dbinsert();
-								$this->debug_log( 'Created Group &laquo;'.$new_Group->get('name').'&raquo;' );
-								$this->debug_log( 'Assigned User to new Group.' );
-
-								$NewUser->set_Group( $new_Group );
-								$assigned_group = true;
-							}
-							else
-							{
-								$this->debug_log( 'Template Group with ID #'.$l_set['tpl_new_grp_ID'].' not found!' );
-							}
-						}
-						else
-						{
-							$this->debug_log( 'No template group for creating a new group configured.' );
-						}
-					}
-				}
-			}
-
-			if( ! $assigned_group )
-			{ // Default group:
-				$users_Group = NULL;
-				$fallback_grp_ID = $this->Settings->get( 'fallback_grp_ID' );
-
-				if( empty($fallback_grp_ID) )
-				{
-					$this->debug_log( 'No default/fallback group given.' );
-				}
-				else
-				{
-					$GroupCache = & get_Cache( 'GroupCache' );
-					$users_Group = & $GroupCache->get_by_ID($fallback_grp_ID);
-
-					if( $users_Group )
-					{ // either $this->default_group_name is not given or wrong
-						$NewUser->set_Group( $users_Group );
-						$assigned_group = true;
-
-						$this->debug_log( 'Using default/fallback group ('.$users_Group->get('name').').' );
-					}
-					else
-					{
-						$this->debug_log( 'Default/fallback group not existing ('.$fallback_grp_ID.').' );
-					}
-				}
-
-			}
-
-			if( $assigned_group )
-			{
-				$NewUser->dbinsert();
-				$UserCache->add( $NewUser );
-
-				$this->debug_log( 'Created user.' );
-			}
-			else
-			{
-				$this->debug_log( 'NOT created user, because no group has been assigned.' );
-			}
-			if( isset($initial_protocol_version) )
-			{
-				ldap_set_option($ldap_conn, LDAP_OPT_PROTOCOL_VERSION, $initial_protocol_version);
-			}
-			return true;
+			// Move on to next LDAP Server
 		}
 
 		if( isset($initial_protocol_version) )
