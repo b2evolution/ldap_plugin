@@ -64,42 +64,29 @@ class ldap_plugin extends Plugin
 		global $Settings;
 
 		return array(
+			'fallback_grp_ID' => array(
+				'label' => T_('Default primary group'),
+				'type' => 'select_group',
+				'note' => T_('The primary group to use for new users (can be overriden by LDAP attributes below). Select "No Group" to prevent creating new users without specifc LDAP Attributes.' ),
+				'allow_none' => true,
+				'defaultvalue' => isset($Settings) ? $Settings->get('newusers_grp_ID') : NULL,
+			),
 			'search_sets' => array(
 				'label' => T_('LDAP servers to check'),
 				'note' => T_('This plugin can search a username sequentially on several different LDAP servers / with different LDAP queries.'),
 				'type' => 'array',
 				'max_count' => 10,
 				'entries' => array(
+					'disabled' => array(
+						'label' => T_('Disabled'),
+						'defaultvalue' => 0,
+						'type' => 'checkbox',
+						'note' => T_('Check to disable this LDAP server.'),
+					),
 					'server' => array(
 						'label' => T_('LDAP Server'),
 						'note' => T_('Hostname with or without port').' '.sprintf( T_('E.g. &laquo;%s&raquo;'), 'ldap.example.com:389' ),
 						'size' => 30,
-					),
-					'rdn' => array(
-						'label' => T_('RDN for binding/authenticating'),
-						'note' => T_('The LDAP RDN, used to bind to the server (%s gets replaced by the user login).').' '.sprintf( T_('E.g. &laquo;%s&raquo;'), 'cn=%s,ou=organization unit,o=Organisation' ),
-						'size' => 40,
-					),
-					'base_dn' => array(
-						'label' => T_('User Details - Base DN'),
-						'note' => T_('The LDAP base DN, used as base DN to search for detailed user info after binding.').' '.sprintf( T_('E.g. &laquo;%s&raquo;'), 'cn=Recipients,ou=organization unit,o=Organisation' ),
-						'size' => 40,
-					),
-					'search_filter' => array(
-						'label' => T_('User Details - Search filter'),
-						'note' => T_('The search filter used to get information about the user (%s gets replaced by the user login).').' '.sprintf( T_('E.g. &laquo;%s&raquo;'), 'uid=%s' ),
-						'size' => 40,
-					),
-					'assign_user_to_group_by' => array(
-						'label' => T_('Assign group by'),
-						'note' => T_('LDAP search result key to assign the group by.').' '.sprintf( T_('E.g. &laquo;%s&raquo;'), 'department' ),
-						'size' => 30,
-					),
-					'tpl_new_grp_ID' => array(
-						'label' => T_('Template Group for new'),
-						'type' => 'select_group',
-						'note' => T_('The group to use as template, if we create a new group. Set this to "None" to not create new groups.'),
-						'allow_none' => true,
 					),
 					'protocol_version' => array(
 						'label' => $this->T_('LDAP protocol version'),
@@ -111,22 +98,51 @@ class ldap_plugin extends Plugin
 						),
 						'note' => $this->T_('A specific protocol version, or "auto" for "current one, then 3 and 2".'),
 					),
-					'disabled' => array(
-						'label' => T_('Disabled'),
-						'defaultvalue' => 0,
-						'type' => 'checkbox',
-						'note' => T_('Check to disable this LDAP server.'),
+					'rdn' => array(
+						'label' => T_('RDN for binding/authenticating'),
+						'note' => T_('The LDAP RDN, used to bind to the server (%s gets replaced by the user login).').' '.sprintf( T_('E.g. &laquo;%s&raquo;'), 'cn=%s,ou=Users,o=Organisation' ),
+						'size' => 40,
+					),
+					'base_dn' => array(
+						'label' => T_('User Details - Base DN'),
+						'note' => T_('The LDAP base DN, used as base DN to search for detailed user info after binding.').' '.sprintf( T_('E.g. &laquo;%s&raquo;'), 'ou=Users,o=Organisation' ),
+						'size' => 40,
+					),
+					'search_filter' => array(
+						'label' => T_('User Details - Search filter'),
+						'note' => T_('The search filter used to get information about the user (%s gets replaced by the user login).').' '.sprintf( T_('E.g. &laquo;%s&raquo;'), 'uid=%s' ),
+						'size' => 40,
+					),
+					'assign_user_to_group_by' => array(
+						'label' => T_('Assign primary group by'),
+						'note' => T_('LDAP search result key to assign the group by.').' '.sprintf( T_('E.g. &laquo;%s&raquo;'), 'department' ),
+						'size' => 30,
+					),
+					'tpl_new_grp_ID' => array(
+						'label' => T_('Template for new primary groups'),
+						'type' => 'select_group',
+						'note' => T_('The group to use as template, if we create a new group. Set this to "No Group" in order not to create any new groups.'),
+						'allow_none' => true,
+					),
+					'secondary_grp_base_dn' => array(
+						'label' => T_('Secondary Groups - Base DN'),
+						'note' => T_('The LDAP base DN, used as base DN to search for secondary groups.').' '.sprintf( T_('E.g. &laquo;%s&raquo;'), 'ou=Groups,o=Organisation' ),
+						'size' => 40,
+					),
+					'secondary_grp_search_filter' => array(
+						'label' => T_('Secondary Groups - Search filter'),
+						'note' => T_('The search filter used to get the list of groups we are interested in (filter at will) (%s gets replaced by the user login).').' '.sprintf( T_('E.g. &laquo;%s&raquo;'), 'objectClass=groupofuniquenames' ),
+						'size' => 40,
+					),
+					'tpl_new_secondary_grp_ID' => array(
+						'label' => T_('Template for new secondary groups'),
+						'type' => 'select_group',
+						'note' => T_('The group to use as template, if we create a new group. Set this to "No Group" in order not to create any new groups.'),
+						'allow_none' => true,
 					),
 				),
 			),
 
-			'fallback_grp_ID' => array(
-				'label' => T_('Default group'),
-				'type' => 'select_group',
-				'note' => T_('The group to use as fallback when not creating a group depending on user attributes. "None" to not create a new user in that case.' ),
-				'allow_none' => true,
-				'defaultvalue' => isset($Settings) ? $Settings->get('newusers_grp_ID') : NULL,
-			),
 		);
 	}
 
@@ -418,54 +434,63 @@ class ldap_plugin extends Plugin
 
 
 			// ---- GROUP STUFF ----
-			if( $update_mode == false )
+			if( $update_mode == true )
+			{	// Updating existing user
+				$this->debug_log( 'Updating existing user: we do NOT touch the primary group.' );
+				
+				$local_User->dbupdate();
+				$this->debug_log( 'OK -- User has been updated.' );
+			}
+			else
 			{
-				// Try to assign group from the search results:
+				// Try to assign prilary group from the search results:
 				$assigned_group = false;
 				if( ! empty($l_set['assign_user_to_group_by']) )
 				{
-					$this->debug_log( 'We want to assign the Group by &laquo;'.$l_set['assign_user_to_group_by'].'&raquo;' );
+					$this->debug_log( 'Plugin is configured to assign the Primary Group by the '.$l_set['assign_user_to_group_by'].' key...' );
 					if( isset($search_info[0][$l_set['assign_user_to_group_by']])
-							&& isset($search_info[0][$l_set['assign_user_to_group_by']][0]) )
+					 && isset($search_info[0][$l_set['assign_user_to_group_by']][0]) )
 					{ // There is info we want to assign by
 						$assign_by_value = $search_info[0][$l_set['assign_user_to_group_by']][0];
-						$this->debug_log( 'The users info has &laquo;'.$assign_by_value.'&raquo; as value given.' );
+						$this->debug_log( 'User info says has '.$l_set['assign_user_to_group_by'].' = "<b>'.$assign_by_value.'</b>"' );
 
 						$GroupCache = & get_Cache( 'GroupCache' );
 						if( $users_Group = & $GroupCache->get_by_name( $assign_by_value, false ) )
 						{ // A group with the users value returned exists.
 							$local_User->set_Group( $users_Group );
 							$assigned_group = true;
-							$this->debug_log( 'Adding User to existing Group.' );
+							$this->debug_log( 'Assigning User to existing Group.' );
 						}
 						else
 						{
-							$this->debug_log( 'Group with that name does not exist.' );
+							$this->debug_log( 'Group with that name does not exist...' );
 
-							if( $l_set['tpl_new_grp_ID'] )
-							{ // we want to create a new group matching the assign-by info
-								$this->debug_log( 'Template Group given, trying to create new group based on that.' );
+							if( ! $l_set['tpl_new_grp_ID'] )
+							{
+								$this->debug_log( 'No template for new primary groups is configured -> NOT creating a new group.' );
+							}
+							else
+							{ // We want to create a new group matching the assign-by info
+								$this->debug_log( 'Template for new primary groups is configured...' );
 
-								if( $new_Group = $GroupCache->get_by_ID( $l_set['tpl_new_grp_ID'], false ) ) // COPY!! and do not halt on error
+								if( ! $new_Group = $GroupCache->get_by_ID( $l_set['tpl_new_grp_ID'], false ) ) // COPY!! and do not halt on error
+								{
+									$this->debug_log( 'Template with Group ID #'.$l_set['tpl_new_grp_ID'].' not found!' );
+								}
+								else
 								{ // take a copy of the Group to use as template
-									$this->debug_log( 'Using Group &laquo;'.$new_Group->get('name').'&raquo; (#'.$l_set['tpl_new_grp_ID'].') as template.' );
+									// TODO: should be use "clone" to make sure we clone the object?
+									// TODO: duplication doesn't seem to work, for example group level or can use API are not duplicated
+									$this->debug_log( 'Using Group <b>'.$new_Group->get('name').'</b> (#'.$l_set['tpl_new_grp_ID'].') as template.' );
 									$new_Group->set( 'ID', 0 ); // unset ID (to allow inserting)
 									$new_Group->set( 'name', $assign_by_value ); // set the wanted name
 									$new_Group->dbinsert();
-									$this->debug_log( 'Created Group &laquo;'.$new_Group->get('name').'&raquo;' );
+									$this->debug_log( 'Created Group <b>'.$new_Group->get('name').'</b>' );
 									$this->debug_log( 'Assigned User to new Group.' );
 
 									$local_User->set_Group( $new_Group );
 									$assigned_group = true;
 								}
-								else
-								{
-									$this->debug_log( 'Template Group with ID #'.$l_set['tpl_new_grp_ID'].' not found!' );
-								}
-							}
-							else
-							{
-								$this->debug_log( 'No template group for creating a new group configured.' );
 							}
 						}
 					}
@@ -473,12 +498,17 @@ class ldap_plugin extends Plugin
 
 				if( ! $assigned_group )
 				{ // Default group:
+					$this->debug_log( 'Falling back to default primary group...' );
+
 					$users_Group = NULL;
 					$fallback_grp_ID = $this->Settings->get( 'fallback_grp_ID' );
 
 					if( empty($fallback_grp_ID) )
 					{
-						$this->debug_log( 'No default/fallback group given.' );
+						$this->debug_log( 'No default/fallback primary group configured.' );
+						$this->debug_log( 'User NOT created, try next LDAP server...' );
+						//Continue to next LDAP server:
+						continue;
 					}
 					else
 					{
@@ -490,56 +520,52 @@ class ldap_plugin extends Plugin
 							$local_User->set_Group( $users_Group );
 							$assigned_group = true;
 
-							$this->debug_log( 'Using default/fallback group ('.$users_Group->get('name').').' );
+							$this->debug_log( 'Using default/fallback primary group: <b>'.$users_Group->get('name').'</b>' );
 						}
 						else
 						{
-							$this->debug_log( 'Default/fallback group not existing ('.$fallback_grp_ID.').' );
+							$this->debug_log( 'Default/fallback primary group does not exist ('.$fallback_grp_ID.').' );
+							$this->debug_log( 'User NOT created, try next LDAP server...' );
+							//Continue to next LDAP server:
+							continue;
 						}
 					}
-
 				}
 
-				if( $assigned_group )
-				{
-					$local_User->dbinsert();
-					$UserCache->add( $local_User );
-					$this->debug_log( 'OK -- User has been created.' );
+				$local_User->dbinsert();
+				$UserCache->add( $local_User );
+				$this->debug_log( 'OK -- User has been created.' );
+			}
 
-					if( isset($initial_protocol_version) )
-					{
-						ldap_set_option($ldap_conn, LDAP_OPT_PROTOCOL_VERSION, $initial_protocol_version);
-					}
 
-					// --- AT THIS POINT, WE CONSIDER THE LOGIN ATTEMPT TO BE SUCCESSFUL AND WE ACCEPT IT ---
-					// Update this value which has been passed by REFERENCE:
-					$params['pass_ok'] = true;
-
-					return true; // Login was a success
+			// --- EXTRA GROUPS ---
+			if( !empty( $l_set['secondary_grp_search_filter'] ) )
+			{
+				$filter = str_replace( '%s', $params['login'], $l_set['secondary_grp_search_filter'] );
+				$this->debug_log( sprintf( 'Step 4 : Now querying for secondary groups. base_dn: <b>%s</b>, filter: <b>%s</b>', $l_set['secondary_grp_base_dn'], $filter ) );
+				$search_result = @ldap_search( $ldap_conn, $l_set['secondary_grp_base_dn'], $filter, array('cn') );
+				if( ! $search_result )
+				{ // this may happen with an empty base_dn
+					$this->debug_log( 'Invalid ldap_search result. No secondary groups will be assigned. Errno: '.ldap_errno($ldap_conn).' Error: '.ldap_error($ldap_conn) );
 				}
 				else
 				{
-					$this->debug_log( 'User NOT created, because no group has been assigned.' );
+					$search_info = ldap_get_entries($ldap_conn, $search_result);
+					$this->debug_log( 'Results returned by LDAP Server: <pre>'.var_export( $search_info, true ).'</pre>' );
 				}
 			}
-			else
-			{	// Updating existing user
-				$local_User->dbupdate();
-				$this->debug_log( 'OK -- User has been updated.' );
 
-				if( isset($initial_protocol_version) )
-				{
-					ldap_set_option($ldap_conn, LDAP_OPT_PROTOCOL_VERSION, $initial_protocol_version);
-				}
-
-				// --- AT THIS POINT, WE CONSIDER THE LOGIN ATTEMPT TO BE SUCCESSFUL AND WE ACCEPT IT ---
-				// Update this value which has been passed by REFERENCE:
-				$params['pass_ok'] = true;
-
-				return true; // Login was a success
+			if( isset($initial_protocol_version) )
+			{
+				ldap_set_option($ldap_conn, LDAP_OPT_PROTOCOL_VERSION, $initial_protocol_version);
 			}
 
-			// Move on to next LDAP Server
+			// --- CONSIDER THE LOGIN ATTEMPT TO BE SUCCESSFUL AND WE ACCEPT IT ---
+			// Update this value which has been passed by REFERENCE:
+			$params['pass_ok'] = true;
+
+			return true; // Login was a success (but return "true" does not trigger anything special in b2evolution)
+
 		}
 
 		if( isset($initial_protocol_version) )
