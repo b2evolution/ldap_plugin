@@ -418,13 +418,6 @@ class ldap_plugin extends Plugin
 				$this->userfield_update_by_code( $local_User, 'officefax', $search_info[0]['telexnumber'][0], 'Phone', 'Office FAX' );
 			}
 
-			// jpegphoto -> Save as profile pictue "ldap.jpeg" and associate with user
-			if( isset($search_info[0]['jpegphoto'][0]))
-			{
-				$this->debug_log( 'Photo: <img src="data:image/jpeg;base64,'.base64_encode($search_info[0]['jpegphoto'][0]).'" />' );
-				// TODO: save to disk and attach to user
-			}
-
 
 			// ---- GROUP STUFF ----
 			if( $update_mode == true )
@@ -532,6 +525,14 @@ class ldap_plugin extends Plugin
 
 			// Assign user to organizations:
 			$this->userorg_assign_to_user( $local_User );
+
+			// jpegphoto -> Save as profile pictue "ldap.jpeg" and associate with user
+			if( isset($search_info[0]['jpegphoto'][0]))
+			{
+				$this->debug_log( 'Photo: <img src="data:image/jpeg;base64,'.base64_encode($search_info[0]['jpegphoto'][0]).'" />' );
+				// Save to disk and attach to user:
+				$this->userimg_attach_photo( $local_User, $search_info[0]['jpegphoto'][0] );
+			}
 
 			// --- EXTRA GROUPS ---
 			if( !empty( $l_set['secondary_grp_search_filter'] ) )
@@ -811,6 +812,65 @@ class ldap_plugin extends Plugin
 
 		// Unset this array after updating:
 		unset( $this->userorgs );
+	}
+
+
+	/**
+	 * Save to disk and attach to user
+	 *
+	 * @param object User (User MUST BE created in DB)
+	 * @param string content of image file
+	 */
+	function userimg_attach_photo( & $User, $image_content )
+	{
+		if( empty( $image_content ) )
+		{	// No image content:
+			return;
+		}
+
+		// Load FileRoot class:
+		load_class( 'files/model/_fileroot.class.php', 'FileRoot' );
+
+		// Try to create FileRoot for the user:
+		$FileRootCache = & get_FileRootCache();
+		$fileroot_ID = FileRoot::gen_ID( 'user', $User->ID );
+		$user_FileRoot = & $FileRootCache->get_by_ID( $fileroot_ID, true );
+		if( ! $user_FileRoot )
+		{	// Impossible to create FileRoot for the User
+			$this->debug_log( sprintf( 'FileRoot cannot be created for User #%s', $User->ID ) );
+			// Exit here:
+			return;
+		}
+
+		// Create/rewrite image file:
+		$image_name = 'ldap.jpg';
+		$image_path = $user_FileRoot->ads_path.$image_name;
+		$image_handle = fopen( $image_path, 'w+' );
+		if( $image_handle === false )
+		{	// File cannot be created
+			$this->debug_log( sprintf( 'Cannot create image file <b>%s</b>', $image_path ) );
+			// Exit here:
+			return;
+		}
+		// Write image content in the file:
+		fwrite( $image_handle, $image_content );
+		fclose( $image_handle );
+
+		// Create file object to work with image:
+		$File = new File( 'user', $User->ID, $image_name );
+		$File->rm_cache();
+		$File->load_meta( true );
+
+		// Link image file to the user:
+		$LinkOwner = new LinkUser( $User );
+		$File->link_to_Object( $LinkOwner );
+
+		$avatar_file_ID = $User->get( 'avatar_file_ID' );
+		if( empty( $avatar_file_ID ) )
+		{	// If user has no main avatar yet then use this new one:
+			$User->set( 'avatar_file_ID', $File->ID );
+			$User->dbupdate();
+		}
 	}
 }
 ?>
