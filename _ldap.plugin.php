@@ -74,7 +74,7 @@ class ldap_plugin extends Plugin
 			'search_sets' => array(
 				'label' => T_('LDAP servers to check'),
 				'note' => T_('This plugin can search a username sequentially on several different LDAP servers / with different LDAP queries.'),
-				'type' => 'array',
+				'type' => 'array:array:string',
 				'max_count' => 10,
 				'entries' => array(
 					'disabled' => array(
