@@ -359,40 +359,35 @@ class ldap_plugin extends Plugin
 			if( isset($search_info[0]['roomnumber'][0]))
 			{
 				$this->debug_log( 'Room number: <b>'.$search_info[0]['roomnumber'][0].'</b>' );
-				// TODO: custom field
-				// $local_User->userfield_update_by_code( 'roomnumber', $search_info[0]['roomnumber'][0], 'Address', 'Room Number' );
+				$this->userfield_update_by_code( $local_User, 'roomnumber', $search_info[0]['roomnumber'][0], 'Address', 'Room Number' );
 			}
 
 			// businesscategory -> user field "businesscategory" (if not found, autocreate it in group "About me")
 			if( isset($search_info[0]['businesscategory'][0]))
 			{
 				$this->debug_log( 'Business Category: <b>'.$search_info[0]['businesscategory'][0].'</b>' );
-				// TODO: custom field
-				// $local_User->userfield_update_by_code( 'businesscategory', $search_info[0]['telephonenumber'][0], 'About Me', 'Business Category' );
+				$this->userfield_update_by_code( $local_User, 'businesscategory', $search_info[0]['businesscategory'][0], 'About Me', 'Business Category' );
 			}
 
 			// telephonenumber -> user field "officephone" (if not found, autocreate it in group "Phone")
 			if( isset($search_info[0]['telephonenumber'][0]))
 			{
 				$this->debug_log( 'Office phone: <b>'.$search_info[0]['telephonenumber'][0].'</b>' );
-				// TODO: custom field
-				// $local_User->userfield_update_by_code( 'officephone', $search_info[0]['telephonenumber'][0], 'Phone', 'Office phone' );
+				$this->userfield_update_by_code( $local_User, 'officephone', $search_info[0]['telephonenumber'][0], 'Phone', 'Office phone' );
 			}
 
 			// mobile -> user field "cellphone" (if not found, autocreate it in group "Phone")
 			if( isset($search_info[0]['mobile'][0]))
 			{
 				$this->debug_log( 'Cell phone: <b>'.$search_info[0]['mobile'][0].'</b>' );
-				// TODO: custom field
-				// $local_User->userfield_update_by_code( 'cellphone', $search_info[0]['mobile'][0], 'Phone', 'Cell phone' );
+				$this->userfield_update_by_code( $local_User, 'cellphone', $search_info[0]['mobile'][0], 'Phone', 'Cell phone' );
 			}
 
 			// employeenumber -> user field "employeenumber" (if not found, autocreate it in group "About me")
 			if( isset($search_info[0]['employeenumber'][0]))
 			{
 				$this->debug_log( 'Employee number: <b>'.$search_info[0]['employeenumber'][0].'</b>' );
-				// TODO: custom field
-				// $local_User->userfield_update_by_code( 'employeenumber', $search_info[0]['employeenumber'][0], 'About me', 'Employee number' );
+				$this->userfield_update_by_code( $local_User, 'employeenumber', $search_info[0]['employeenumber'][0], 'About me', 'Employee number' );
 			}
 
 			// departmentnumber -> join Organization with the same name (create if doesn't exist)
@@ -413,16 +408,14 @@ class ldap_plugin extends Plugin
 			if( isset($search_info[0]['title'][0]))
 			{
 				$this->debug_log( 'Title: <b>'.$search_info[0]['title'][0].'</b>' );
-				// TODO: custom field
-				// $local_User->userfield_update_by_code( 'title', $search_info[0]['telephonenumber'][0], 'About Me', 'Title' );
+				$this->userfield_update_by_code( $local_User, 'title', $search_info[0]['title'][0], 'About Me', 'Title' );
 			}
 
 			// telexnumber -> user field "officefax" (if not found, autocreate it in group "Phone")
 			if( isset($search_info[0]['telexnumber'][0]))
 			{
 				$this->debug_log( 'Office FAX: <b>'.$search_info[0]['telexnumber'][0].'</b>' );
-				// TODO: custom field
-				// $local_User->userfield_update_by_code( 'officefax', $search_info[0]['telexnumber'][0], 'Phone', 'Office FAX' );
+				$this->userfield_update_by_code( $local_User, 'officefax', $search_info[0]['telexnumber'][0], 'Phone', 'Office FAX' );
 			}
 
 			// jpegphoto -> Save as profile pictue "ldap.jpeg" and associate with user
@@ -584,6 +577,146 @@ class ldap_plugin extends Plugin
 	function LoginAttemptNeedsRawPassword()
 	{
 		return true;
+	}
+
+
+	/**
+	 * Add new or Update an exsisting user field by code
+	 *
+	 * @param object User
+	 * @param string Field code
+	 * @param string Field value
+	 * @param string Field group name
+	 * @param string Field name
+	 */
+	function userfield_update_by_code( & $User, $field_code, $field_value, $field_group_name, $field_name )
+	{
+		$field_value = utf8_trim( $field_value );
+		if( empty( $field_value ) )
+		{	// Don't add an user field with empty value:
+			return;
+		}
+
+		// Get user field ID by code:
+		$field_ID = $this->userfield_get_by_code( $field_code, $field_group_name, $field_name );
+
+		if( ! $field_ID )
+		{	// Some error on creating new user field, We cannot update this field:
+			// Exit here:
+			$this->debug_log( sprintf( 'Skip an updating of user field "%s" because new field cannot be created.', $field_name ) );
+			return;
+		}
+
+		// Try to get current fiedl value of the user:
+		$current_field_value = $User->userfield_value_by_ID( $field_ID );
+
+		if( $current_field_value === '' )
+		{	// Add new user field to the user it is not defined yet:
+			$User->userfield_add( $field_ID, $field_value );
+			$this->debug_log( sprintf( 'Add new user field "%s"', $field_code ) );
+		}
+	}
+
+
+	/**
+	 * Get user field group ID by name AND Try to create new if it doesn't exist yet
+	 *
+	 * @param string Field code
+	 * @param string Field group name
+	 * @param string Field name
+	 * @return integer Field ID
+	 */
+	function userfield_get_by_code( $field_code, $field_group_name, $field_name )
+	{
+
+		if( is_null( $this->userfields ) )
+		{	// Load all user fields in cache on first time request:
+			global $DB;
+			$SQL = new SQL();
+			$SQL->SELECT( 'ufdf_code, ufdf_ID' );
+			$SQL->FROM( 'T_users__fielddefs' );
+			$this->userfields = $DB->get_assoc( $SQL->get(), 'Load all user fields in cache array of LDAP plugin' );
+		}
+
+		if( ! isset( $this->userfields[ $field_code ] ) )
+		{	// Create new user field if it is not found in DB:
+
+			$field_group_ID = $this->userfield_get_group_by_name( $field_group_name );
+			if( ! $field_group_ID )
+			{	// Some error on creating new user field group, We cannot create new user field without group:
+				// Exit here:
+				$this->debug_log( sprintf( 'Skip a creating of new user field "%s" because new group "%s" cannot be created.', $field_name, $field_group_name ) );
+				return;
+			}
+
+			// Load Userfield class:
+			load_class( 'users/model/_userfield.class.php', 'Userfield' );
+
+			$Userfield = new Userfield();
+			$Userfield->set( 'code', $field_code );
+			$Userfield->set( 'ufgp_ID', $field_group_ID );
+			$Userfield->set( 'name', $field_name );
+			$Userfield->set( 'type', 'word' );
+			$Userfield->set( 'order', $Userfield->get_last_order( $field_group_ID ) );
+			if( $Userfield->dbinsert() )
+			{	// New user field has been created, Add it in cache array:
+				$this->userfields[ $field_code ] = $Userfield->ID;
+
+				$this->debug_log( sprintf( 'New user field "%s" has been created in system', $field_name ) );
+			}
+		}
+
+		if( isset( $this->userfields[ $field_code ] ) )
+		{	// Return ID of user field by ID:
+			return $this->userfields[ $field_code ];
+		}
+		else
+		{	// No user field found by code:
+			return false;
+		}
+	}
+
+
+	/**
+	 * Get user field group ID by name AND Try to create new if it doesn't exist yet
+	 *
+	 * @param string Field group name
+	 * @return integer Field group ID
+	 */
+	function userfield_get_group_by_name( $field_group_name )
+	{
+		if( is_null( $this->userfield_groups ) )
+		{	// Load all user field groups in cache on first time request:
+			global $DB;
+			$SQL = new SQL();
+			$SQL->SELECT( 'ufgp_ID, ufgp_name' );
+			$SQL->FROM( 'T_users__fieldgroups' );
+			$this->userfield_groups = $DB->get_assoc( $SQL->get(), 'Load all user field groups in cache array of LDAP plugin' );
+		}
+
+		$field_group_ID = array_search( $field_group_name, $this->userfield_groups );
+
+		if( $field_group_ID === false )
+		{	// No user field group in DB, Try to create new:
+
+			// Load UserfieldGroup class:
+			load_class( 'users/model/_userfieldgroup.class.php', 'UserfieldGroup' );
+
+			$UserfieldGroup = new UserfieldGroup();
+			$UserfieldGroup->set( 'name', $field_group_name );
+			$UserfieldGroup->set( 'order', 0 );
+			if( $UserfieldGroup->dbinsert() )
+			{	// New user field group has been created
+				$field_group_ID = $UserfieldGroup->ID;
+
+				// Add new user field group in cache array:
+				$this->userfield_groups[ $field_group_ID ] = $field_group_name;
+
+				$this->debug_log( sprintf( 'New user field group "%s" has been created in system', $field_group_name ) );
+			}
+		}
+
+		return $field_group_ID;
 	}
 }
 ?>
