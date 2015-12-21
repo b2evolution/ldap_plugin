@@ -394,14 +394,14 @@ class ldap_plugin extends Plugin
 			if( isset($search_info[0]['departmentnumber'][0]))
 			{
 				$this->debug_log( 'Department Number: <b>'.$search_info[0]['departmentnumber'][0].'</b>' );
-				// TODO: create/join organization
+				$this->userorg_update_by_name( $local_User, $search_info[0]['departmentnumber'][0] );
 			}
 
 			// o -> join Organization with the same name (create if doesn't exist)
 			if( isset($search_info[0]['o'][0]))
 			{
 				$this->debug_log( 'Organization: <b>'.$search_info[0]['o'][0].'</b>' );
-				// TODO: create/join organization
+				$this->userorg_update_by_name( $local_User, $search_info[0]['o'][0] );
 			}
 
 			// title -> user field "title" (if not found, autocreate it in group "About me")
@@ -530,6 +530,8 @@ class ldap_plugin extends Plugin
 				$this->debug_log( 'OK -- User has been created.' );
 			}
 
+			// Assign user to organizations:
+			$this->userorg_assign_to_user( $local_User );
 
 			// --- EXTRA GROUPS ---
 			if( !empty( $l_set['secondary_grp_search_filter'] ) )
@@ -717,6 +719,98 @@ class ldap_plugin extends Plugin
 		}
 
 		return $field_group_ID;
+	}
+
+
+	/**
+	 * Assign user to organization AND Try to create new organization if it doesn't exist yet
+	 *
+	 * @param object User
+	 * @param string Organization name
+	 */
+	function userorg_update_by_name( & $User, $org_name )
+	{
+		$org_name = utf8_trim( $org_name );
+		if( empty( $org_name ) )
+		{	// Don't update an user organization with empty name:
+			return;
+		}
+
+		if( is_null( $this->userorgs ) )
+		{	// Initialize array to keep what organizations should be assigned to the user:
+			$this->userorgs = array();
+		}
+
+		// Get organization ID by name AND save it in array to update after user insertion:
+		$this->userorgs[] = $this->userorg_get_by_name( $org_name );
+	}
+
+
+	/**
+	 * Get organization ID by name AND Try to create new if it doesn't exist yet
+	 *
+	 * @param string Organization name
+	 * @return integer Organization ID
+	 */
+	function userorg_get_by_name( $org_name )
+	{
+		if( is_null( $this->organizations ) )
+		{	// Load all user field groups in cache on first time request:
+			global $DB;
+			$SQL = new SQL();
+			$SQL->SELECT( 'org_ID, org_name' );
+			$SQL->FROM( 'T_users__organization' );
+			$this->organizations = $DB->get_assoc( $SQL->get(), 'Load all organizations in cache array of LDAP plugin' );
+		}
+
+		$org_ID = array_search( $org_name, $this->organizations );
+
+		if( $org_ID === false )
+		{	// No organization in DB, Try to create new:
+
+			// Load Organization class:
+			load_class( 'users/model/_organization.class.php', 'Organization' );
+
+			$Organization = new Organization();
+			$Organization->set( 'name', $org_name );
+			if( $Organization->dbinsert() )
+			{	// New user field group has been created
+				$org_ID = $Organization->ID;
+
+				// Add new user field group in cache array:
+				$this->organizations[ $org_ID ] = $org_name;
+
+				$this->debug_log( sprintf( 'New organization "%s" has been created in system', $org_name ) );
+			}
+		}
+
+		return $org_ID;
+	}
+
+
+	/**
+	 * Assign user to organizations
+	 *
+	 * @param object User
+	 */
+	function userorg_assign_to_user( & $User )
+	{
+		if( empty( $User->ID ) || empty( $this->userorgs ) )
+		{	// User must be created and organizations should be added
+			return;
+		}
+
+		// Get current user organization to don't lose them:
+		$curr_orgs = $User->get_organizations_data();
+		$curr_org_IDs = array_keys( $curr_orgs );
+		$this->userorgs = array_merge( $curr_org_IDs, $this->userorgs );
+		array_unique( $this->userorgs );
+
+		// Update user's organizations in DB:
+		$User->update_organizations( $this->userorgs );
+
+		// Unset this array after updating:
+		unset( $this->userorgs );
 	}
 }
 ?>
