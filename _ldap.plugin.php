@@ -464,23 +464,48 @@ class ldap_plugin extends Plugin
 							{ // We want to create a new group matching the assign-by info
 								$this->debug_log( 'Template for new primary groups is configured...' );
 
-								if( ! $new_Group = $GroupCache->get_by_ID( $l_set['tpl_new_grp_ID'], false ) ) // COPY!! and do not halt on error
+								if( ! $template_Group = $GroupCache->get_by_ID( $l_set['tpl_new_grp_ID'], false ) ) // COPY!! and do not halt on error
 								{
 									$this->debug_log( 'Template with Group ID #'.$l_set['tpl_new_grp_ID'].' not found!' );
 								}
 								else
 								{ // take a copy of the Group to use as template
-									// TODO: should be use "clone" to make sure we clone the object?
-									// TODO: duplication doesn't seem to work, for example group level or can use API are not duplicated
-									$this->debug_log( 'Using Group <b>'.$new_Group->get('name').'</b> (#'.$l_set['tpl_new_grp_ID'].') as template.' );
+									global $DB;
+
+									$this->debug_log( 'Using Group <b>'.$template_Group->get('name').'</b> (#'.$l_set['tpl_new_grp_ID'].') as template.' );
+
+									// Create new group:
+									$new_Group = new Group();
+
+									// Get field values of the template group:
+									$group_row = $DB->get_row( 'SELECT *
+										 FROM T_groups
+										WHERE grp_ID = '.$DB->quote( $l_set['tpl_new_grp_ID'] ), ARRAY_A );
+									foreach( $group_row as $group_field_name => $group_field_value )
+									{	// Copy each value from template group to new:
+										$new_Group->set( preg_replace( '/^grp_/', '', $group_field_name ), $group_field_value );
+									}
 									$new_Group->set( 'ID', 0 ); // unset ID (to allow inserting)
 									$new_Group->set( 'name', $assign_by_value ); // set the wanted name
+
+									// Get settings of the template group:
+									$GroupSettings = & $new_Group->get_GroupSettings();
+									$group_settings = $DB->get_results( 'SELECT gset_name AS name, gset_value AS value
+										 FROM T_groups__groupsettings
+										WHERE gset_grp_ID = '.$DB->quote( $l_set['tpl_new_grp_ID'] ) );
+									foreach( $group_settings as $group_setting )
+									{	// Copy each setting from template group to new:
+										$GroupSettings->set( $group_setting->name, $group_setting->value, $new_Group->ID );
+									}
+
+									// Insert new group:
 									$new_Group->dbinsert();
 									$this->debug_log( 'Created Group <b>'.$new_Group->get('name').'</b>' );
-									$this->debug_log( 'Assigned User to new Group.' );
 
+									// Link the user to new created group:
 									$local_User->set_Group( $new_Group );
 									$assigned_group = true;
+									$this->debug_log( 'Assigned User to new Group.' );
 								}
 							}
 						}
