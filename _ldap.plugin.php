@@ -61,7 +61,7 @@ class ldap_plugin extends Plugin
 
 	function GetDefaultSettings()
 	{
-		global $Settings;
+		global $Settings, $app_version;
 
 		return array(
 			'fallback_grp_ID' => array(
@@ -74,7 +74,7 @@ class ldap_plugin extends Plugin
 			'search_sets' => array(
 				'label' => T_('LDAP servers to check'),
 				'note' => T_('This plugin can search a username sequentially on several different LDAP servers / with different LDAP queries.'),
-				'type' => 'array:array:string',
+				'type' => version_compare( $app_version, '6.6.5', '>' ) ? 'array:array:string' : 'array',
 				'max_count' => 10,
 				'entries' => array(
 					'disabled' => array(
