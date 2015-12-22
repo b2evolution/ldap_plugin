@@ -366,7 +366,7 @@ class ldap_plugin extends Plugin
 			if( isset($search_info[0]['businesscategory'][0]))
 			{
 				$this->debug_log( 'Business Category: <b>'.$search_info[0]['businesscategory'][0].'</b>' );
-				$this->userfield_update_by_code( $local_User, 'businesscategory', $search_info[0]['businesscategory'][0], 'About Me', 'Business Category' );
+				$this->userfield_update_by_code( $local_User, 'businesscategory', $search_info[0]['businesscategory'][0], 'About me', 'Business Category' );
 			}
 
 			// telephonenumber -> user field "officephone" (if not found, autocreate it in group "Phone")
@@ -390,25 +390,30 @@ class ldap_plugin extends Plugin
 				$this->userfield_update_by_code( $local_User, 'employeenumber', $search_info[0]['employeenumber'][0], 'About me', 'Employee number' );
 			}
 
+			// title -> user field "title" (if not found, autocreate it in group "About me")
+			if( isset($search_info[0]['title'][0]))
+			{
+				$this->debug_log( 'Title: <b>'.$search_info[0]['title'][0].'</b>' );
+				$this->userfield_update_by_code( $local_User, 'title', $search_info[0]['title'][0], 'About me', 'Title' );
+				$userfield_title = $search_info[0]['title'][0]; // Use this as role for all organizations below
+			}
+			else
+			{
+				$userfield_title = '';
+			}
+
 			// departmentnumber -> join Organization with the same name (create if doesn't exist)
 			if( isset($search_info[0]['departmentnumber'][0]))
 			{
 				$this->debug_log( 'Department Number: <b>'.$search_info[0]['departmentnumber'][0].'</b>' );
-				$this->userorg_update_by_name( $local_User, $search_info[0]['departmentnumber'][0] );
+				$this->userorg_update_by_name( $local_User, $search_info[0]['departmentnumber'][0], $userfield_title );
 			}
 
 			// o -> join Organization with the same name (create if doesn't exist)
 			if( isset($search_info[0]['o'][0]))
 			{
 				$this->debug_log( 'Organization: <b>'.$search_info[0]['o'][0].'</b>' );
-				$this->userorg_update_by_name( $local_User, $search_info[0]['o'][0] );
-			}
-
-			// title -> user field "title" (if not found, autocreate it in group "About me")
-			if( isset($search_info[0]['title'][0]))
-			{
-				$this->debug_log( 'Title: <b>'.$search_info[0]['title'][0].'</b>' );
-				$this->userfield_update_by_code( $local_User, 'title', $search_info[0]['title'][0], 'About Me', 'Title' );
+				$this->userorg_update_by_name( $local_User, $search_info[0]['o'][0], $userfield_title );
 			}
 
 			// telexnumber -> user field "officefax" (if not found, autocreate it in group "Phone")
@@ -610,13 +615,48 @@ class ldap_plugin extends Plugin
 			return;
 		}
 
-		// Try to get current fiedl value of the user:
-		$current_field_value = $User->userfield_value_by_ID( $field_ID );
+		// Load all user fields:
+		$User->userfields_load();
 
-		if( $current_field_value === '' )
-		{	// Add new user field to the user it is not defined yet:
-			$User->userfield_add( $field_ID, $field_value );
-			$this->debug_log( sprintf( 'Add new user field "%s"', $field_code ) );
+		// What to do with the field depending on field type and new value:
+		// 'add', 'update', 'nothing'
+		$field_action = 'add';
+
+		if( ! empty( $User->userfields_by_code[ $field_code ] ) && is_array( $User->userfields_by_code[ $field_code ] ) )
+		{	// This user field is already defined for the user
+			$userfield = $User->userfields[ $User->userfields_by_code[ $field_code ][0] ];
+			if( $userfield->ufdf_duplicated == 'forbidden' )
+			{	// This field cannot has multiple values, Update it to new value:
+				$field_action = 'update';
+				$field_ID = $userfield->uf_ID;
+			}
+			else
+			{	// Multiple values field
+				$userfield_values = array();
+				foreach( $User->userfields_by_code[ $field_code ] as $userfield_ID )
+				{
+					$userfield_values[] = $User->userfields[ $userfield_ID ]->uf_varchar;
+				}
+				if( in_array( $field_value, $userfield_values ) )
+				{	// User already has this field with the same action, Don't add a duplicate:
+					$field_action = 'nothing';
+				}
+			}
+		}
+
+		switch( $field_action )
+		{
+			case 'add':
+				// Add new user field to the user it is not defined yet:
+				$User->userfield_add( $field_ID, $field_value );
+				$this->debug_log( sprintf( 'Add new user field "%s"', $field_code ) );
+				break;
+
+			case 'update':
+				// Update user field of the user to new value:
+				$User->userfield_update( $field_ID, $field_value );
+				$this->debug_log( sprintf( 'Update user field "%s" to new value', $field_code ) );
+				break;
 		}
 	}
 
@@ -661,6 +701,7 @@ class ldap_plugin extends Plugin
 			$Userfield->set( 'name', $field_name );
 			$Userfield->set( 'type', 'word' );
 			$Userfield->set( 'order', $Userfield->get_last_order( $field_group_ID ) );
+			$Userfield->set( 'duplicated', 'forbidden' );
 			if( $Userfield->dbinsert() )
 			{	// New user field has been created, Add it in cache array:
 				$this->userfields[ $field_code ] = $Userfield->ID;
@@ -728,8 +769,9 @@ class ldap_plugin extends Plugin
 	 *
 	 * @param object User
 	 * @param string Organization name
+	 * @param string Organization role
 	 */
-	function userorg_update_by_name( & $User, $org_name )
+	function userorg_update_by_name( & $User, $org_name, $org_role = '' )
 	{
 		$org_name = utf8_trim( $org_name );
 		if( empty( $org_name ) )
@@ -743,7 +785,8 @@ class ldap_plugin extends Plugin
 		}
 
 		// Get organization ID by name AND save it in array to update after user insertion:
-		$this->userorgs[] = $this->userorg_get_by_name( $org_name );
+		$org_ID = $this->userorg_get_by_name( $org_name );
+		$this->userorgs[ $org_ID ] = $org_role;
 	}
 
 
@@ -803,12 +846,26 @@ class ldap_plugin extends Plugin
 
 		// Get current user organization to don't lose them:
 		$curr_orgs = $User->get_organizations_data();
-		$curr_org_IDs = array_keys( $curr_orgs );
-		$this->userorgs = array_merge( $curr_org_IDs, $this->userorgs );
-		array_unique( $this->userorgs );
+		$orgs = array();
+		foreach( $curr_orgs as $curr_org_ID => $curr_org )
+		{	// Keep current organizations:
+			$orgs[ $curr_org_ID ] = $curr_org['role'];
+		}
+		foreach( $this->userorgs as $org_ID => $org_role )
+		{	// Update current organizations with new:
+			// NOTE: Role will be updated to new value ONLY when organization is NOT accepted yet because of perm restriction
+			$orgs[ $org_ID ] = $org_role;
+		}
+		$org_IDs = array();
+		$org_roles = array();
+		foreach( $orgs as $org_ID => $org_role )
+		{	// Initialize arrays to update the organizations:
+			$org_IDs[] = $org_ID;
+			$org_roles[] = $org_role;
+		}
 
 		// Update user's organizations in DB:
-		$User->update_organizations( $this->userorgs );
+		$User->update_organizations( $org_IDs, $org_roles, true );
 
 		// Unset this array after updating:
 		unset( $this->userorgs );
