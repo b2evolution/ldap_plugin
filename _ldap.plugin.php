@@ -842,9 +842,18 @@ class ldap_plugin extends Plugin
 			return;
 		}
 
+		// Try to create a folder for image:
+		$folder_name = 'profile_pictures'; // Folder name in user dir where we should store image file
+		$image_name = 'ldap.jpg'; // File name of the image file
+		$folder_path = $user_FileRoot->ads_path.$folder_name;
+		$image_path = $folder_path.'/'.$image_name;
+		if( ! mkdir_r( $folder_path ) )
+		{	// Folder cannot be created
+			$this->debug_log( sprintf( 'Cannot create image folder <b>%s</b>', $folder_path ) );
+			// Exit here:
+			return;
+		}
 		// Create/rewrite image file:
-		$image_name = 'ldap.jpg';
-		$image_path = $user_FileRoot->ads_path.$image_name;
 		$image_handle = fopen( $image_path, 'w+' );
 		if( $image_handle === false )
 		{	// File cannot be created
@@ -857,7 +866,7 @@ class ldap_plugin extends Plugin
 		fclose( $image_handle );
 
 		// Create file object to work with image:
-		$File = new File( 'user', $User->ID, $image_name );
+		$File = new File( 'user', $User->ID, $folder_name.'/'.$image_name );
 		$File->rm_cache();
 		$File->load_meta( true );
 
