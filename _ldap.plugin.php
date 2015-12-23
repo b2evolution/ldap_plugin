@@ -59,6 +59,25 @@ class ldap_plugin extends Plugin
 	}
 
 
+	/**
+	 * Define some dependencies.
+	 *
+	 * @see Plugin::GetDependencies()
+	 * @return array
+	 *
+	function GetDependencies()
+	{
+		return array(
+				'requires' => array(
+					'app_min' => '6.6.6',
+				),
+				'recommends' => array(
+					'app_min' => '6.6.7',
+				),
+			);
+	}*/
+
+
 	function GetDefaultSettings()
 	{
 		global $Settings, $app_version;
@@ -112,6 +131,11 @@ class ldap_plugin extends Plugin
 						'label' => T_('User Details - Search filter'),
 						'note' => T_('The search filter used to get information about the user (%s gets replaced by the user login).').' '.sprintf( T_('E.g. &laquo;%s&raquo;'), 'uid=%s' ),
 						'size' => 40,
+					),
+					'expand_pics' => array(
+						'label' => T_('Expand profile pictures to a square'),
+						'note' => T_('This will add white margins to the pictures'),
+						'type'  => 'checkbox',
 					),
 					'assign_user_to_group_by' => array(
 						'label' => T_('Assign primary group by'),
@@ -561,7 +585,7 @@ class ldap_plugin extends Plugin
 			{
 				$this->debug_log( 'Photo: <img src="data:image/jpeg;base64,'.base64_encode($search_info[0]['jpegphoto'][0]).'" />' );
 				// Save to disk and attach to user:
-				$this->userimg_attach_photo( $local_User, $search_info[0]['jpegphoto'][0] );
+				$this->userimg_attach_photo( $local_User, $search_info[0]['jpegphoto'][0], ! empty( $l_set['expand_pics'] ) );
 			}
 
 			// --- EXTRA GROUPS ---
@@ -902,8 +926,9 @@ class ldap_plugin extends Plugin
 	 *
 	 * @param object User (User MUST BE created in DB)
 	 * @param string content of image file
+	 * @param boolean TRUE - to expand photos to a square
 	 */
-	function userimg_attach_photo( & $User, $image_content )
+	function userimg_attach_photo( & $User, $image_content, $expand_pics )
 	{
 		if( empty( $image_content ) )
 		{	// No image content:
@@ -952,6 +977,11 @@ class ldap_plugin extends Plugin
 		$File->rm_cache();
 		$File->load_meta( true );
 
+		if( $expand_pics )
+		{	// Expand a photo to a square:
+			$this->userimg_expand_to_square( $File );
+		}
+
 		// Link image file to the user:
 		$LinkOwner = new LinkUser( $User );
 		$File->link_to_Object( $LinkOwner );
@@ -962,6 +992,78 @@ class ldap_plugin extends Plugin
 			$User->set( 'avatar_file_ID', $File->ID );
 			$User->dbupdate();
 		}
+	}
+
+
+	/**
+	 * Expand image to a square
+	 *
+	 * @param object File
+	 * @return boolean
+	 */
+	function userimg_expand_to_square( & $File )
+	{
+		if( ! $File->is_image() )
+		{	// This must be an image:
+			return false;
+		}
+
+		$Filetype = & $File->get_Filetype();
+		if( ! $Filetype )
+		{	// File type must be, otherwise we cannot work with this file:
+			return false;
+		}
+
+		// Get image size:
+		$image_size = $File->get_image_size( 'widthheight_assoc' );
+		if( $image_size['width'] == $image_size['height'] )
+		{	// We should not expand this image because it is already a square:
+			return false;
+		}
+
+		load_funcs( 'files/model/_image.funcs.php' );
+
+		// Load image:
+		list( $err, $src_imh ) = load_image( $File->get_full_path(), $Filetype->mimetype );
+		if( ! empty( $err ) )
+		{	// Error on image loading:
+			return false;
+		}
+
+		// Expand image to square ---- START:
+
+		// Use max side as square size for width & height:
+		$expanded_image_size = max( $image_size );
+
+		if( $image_size['width'] > $image_size['height'] )
+		{	// If width is more than height then we should center image vertically:
+			$dst_x = 0;
+			$dst_y = ceil( ( $expanded_image_size - $image_size['height'] ) / 2 );
+		}
+		else
+		{	// If width is less than height then we should center image horizonatally:
+			$dst_x = ceil( ( $expanded_image_size - $image_size['width'] ) / 2 );
+			$dst_y = 0;
+		}
+
+		// Create canvas for new image with white background:
+		$dst_imh = imagecreatetruecolor( $expanded_image_size, $expanded_image_size );
+		$white_color = imagecolorallocate( $dst_imh, 255, 255, 255 );
+		imagefill( $dst_imh, 0, 0, $white_color );
+
+		if( ! @imagecopyresampled( $dst_imh, $src_imh, $dst_x, $dst_y, 0, 0, $image_size['width'], $image_size['height'], $image_size['width'], $image_size['height'] ) )
+		{	// If func imagecopyresampled is not defined for example:
+			return false;
+		}
+		// Expand image to square ---- END.
+
+		// Save image:
+		save_image( $dst_imh, $File->get_full_path(), $Filetype->mimetype );
+
+		// Remove the old thumbnails:
+		$File->rm_cache();
+
+		return true;
 	}
 }
 ?>
