@@ -64,18 +64,18 @@ class ldap_plugin extends Plugin
 	 *
 	 * @see Plugin::GetDependencies()
 	 * @return array
-	 *
+	 */
 	function GetDependencies()
 	{
 		return array(
 				'requires' => array(
-					'app_min' => '6.6.6',
+					'app_min' => '6.6.6-stable',
 				),
 				'recommends' => array(
-					'app_min' => '6.6.7',
+					'app_min' => '6.6.7-stable',
 				),
 			);
-	}*/
+	}
 
 
 	function GetDefaultSettings()
