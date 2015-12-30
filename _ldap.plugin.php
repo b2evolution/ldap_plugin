@@ -69,10 +69,10 @@ class ldap_plugin extends Plugin
 	{
 		return array(
 				'requires' => array(
-					'app_min' => '6.6.6-stable',
+					'app_min' => '6.7.0-alpha',
 				),
 				'recommends' => array(
-					'app_min' => '6.6.7-stable',
+					'app_min' => '6.7.0-alpha',
 				),
 			);
 	}
@@ -474,63 +474,17 @@ class ldap_plugin extends Plugin
 						{ // A group with the users value returned exists.
 							$local_User->set_Group( $users_Group );
 							$assigned_group = true;
-							$this->debug_log( 'Assigning User to existing Group.' );
+							$this->debug_log( 'Assigning User to existing Primary Group.' );
 						}
 						else
 						{
 							$this->debug_log( 'Group with that name does not exist...' );
 
-							if( ! $l_set['tpl_new_grp_ID'] )
-							{
-								$this->debug_log( 'No template for new primary groups is configured -> NOT creating a new group.' );
-							}
-							else
-							{ // We want to create a new group matching the assign-by info
-								$this->debug_log( 'Template for new primary groups is configured...' );
-
-								if( ! $template_Group = $GroupCache->get_by_ID( $l_set['tpl_new_grp_ID'], false ) ) // COPY!! and do not halt on error
-								{
-									$this->debug_log( 'Template with Group ID #'.$l_set['tpl_new_grp_ID'].' not found!' );
-								}
-								else
-								{ // take a copy of the Group to use as template
-									global $DB;
-
-									$this->debug_log( 'Using Group <b>'.$template_Group->get('name').'</b> (#'.$l_set['tpl_new_grp_ID'].') as template.' );
-
-									// Create new group:
-									$new_Group = new Group();
-
-									// Get field values of the template group:
-									$group_row = $DB->get_row( 'SELECT *
-										 FROM T_groups
-										WHERE grp_ID = '.$DB->quote( $l_set['tpl_new_grp_ID'] ), ARRAY_A );
-									foreach( $group_row as $group_field_name => $group_field_value )
-									{	// Copy each value from template group to new:
-										$new_Group->set( preg_replace( '/^grp_/', '', $group_field_name ), $group_field_value );
-									}
-									$new_Group->set( 'ID', 0 ); // unset ID (to allow inserting)
-									$new_Group->set( 'name', $assign_by_value ); // set the wanted name
-
-									// Get settings of the template group:
-									$GroupSettings = & $new_Group->get_GroupSettings();
-									$group_settings = $DB->get_results( 'SELECT gset_name AS name, gset_value AS value
-										 FROM T_groups__groupsettings
-										WHERE gset_grp_ID = '.$DB->quote( $l_set['tpl_new_grp_ID'] ) );
-									foreach( $group_settings as $group_setting )
-									{	// Copy each setting from template group to new:
-										$GroupSettings->set( $group_setting->name, $group_setting->value, $new_Group->ID );
-									}
-
-									// Insert new group:
-									$new_Group->dbinsert();
-									$this->debug_log( 'Created Group <b>'.$new_Group->get('name').'</b>' );
-
-									// Link the user to new created group:
-									$local_User->set_Group( $new_Group );
-									$assigned_group = true;
-									$this->debug_log( 'Assigned User to new Group.' );
-								}
+							if( $new_Group = & $this->usergroup_create( $l_set['tpl_new_grp_ID'], $assign_by_value ) )
+							{	// Link the user to new created group:
+								$local_User->set_Group( $new_Group );
+								$assigned_group = true;
+								$this->debug_log( 'Assigned User to new Primary Group.' );
 							}
 						}
 					}
@@ -600,8 +554,14 @@ class ldap_plugin extends Plugin
 				}
 				else
 				{
-					$search_info = ldap_get_entries($ldap_conn, $search_result);
+					// $search_info = ldap_get_entries($ldap_conn, $search_result);
+					// Hardcode two secondary groups:
+					$search_info = array( 'Blog B members', 'Blog C Members' );
+
 					$this->debug_log( 'Results returned by LDAP Server: <pre>'.var_export( $search_info, true ).'</pre>' );
+
+					// Update secondary groups for the User:
+					$this->usersecgroup_update( $local_User, $search_info, $l_set['tpl_new_secondary_grp_ID'] );
 				}
 			}
 
@@ -865,6 +825,7 @@ class ldap_plugin extends Plugin
 			load_class( 'users/model/_organization.class.php', 'Organization' );
 
 			$Organization = new Organization();
+			$Organization->set( 'owner_user_ID', '1' );
 			$Organization->set( 'name', $org_name );
 			if( $Organization->dbinsert() )
 			{	// New user field group has been created
@@ -1064,6 +1025,126 @@ class ldap_plugin extends Plugin
 		$File->rm_cache();
 
 		return true;
+	}
+
+
+	/**
+	 * Create new group
+	 *
+	 * @param integer Template group ID
+	 * @param string Group name
+	 * @param string Group usage: 'primary', 'secondary'
+	 */
+	function usergroup_create( $template_group_ID, $group_name, $usage = 'primary' )
+	{
+		$GroupCache = & get_Cache( 'GroupCache' );
+		if( ! $template_Group = $GroupCache->get_by_ID( $template_group_ID, false ) ) // COPY!! and do not halt on error
+		{
+			$this->debug_log( 'Template with Group ID #'.$template_group_ID.' not found!' );
+		}
+		else
+		{	// Take a copy of the Group to use as template:
+			global $DB;
+
+			$this->debug_log( 'Using Group <b>'.$template_Group->get('name').'</b> (#'.$template_group_ID.') as template.' );
+
+			// Create new group:
+			$new_Group = new Group();
+
+			// Get field values of the template group:
+			$group_row = $DB->get_row( 'SELECT *
+				 FROM T_groups
+				WHERE grp_ID = '.$DB->quote( $template_group_ID ), ARRAY_A );
+			foreach( $group_row as $group_field_name => $group_field_value )
+			{	// Copy each value from template group to new:
+				$new_Group->set( preg_replace( '/^grp_/', '', $group_field_name ), $group_field_value );
+			}
+			$new_Group->set( 'ID', 0 ); // unset ID (to allow inserting)
+			$new_Group->set( 'name', $group_name ); // set the wanted name
+			$new_Group->set( 'usage', $usage );
+
+			// Get settings of the template group:
+			$GroupSettings = & $new_Group->get_GroupSettings();
+			$group_settings = $DB->get_results( 'SELECT gset_name AS name, gset_value AS value
+				 FROM T_groups__groupsettings
+				WHERE gset_grp_ID = '.$DB->quote( $template_group_ID ) );
+			foreach( $group_settings as $group_setting )
+			{	// Copy each setting from template group to new:
+				$GroupSettings->set( $group_setting->name, $group_setting->value, $new_Group->ID );
+			}
+
+			// Insert new group:
+			$new_Group->dbinsert();
+
+			if( ! empty( $new_Group->ID ) )
+			{
+				$this->debug_log( 'Created '.$usage.' Group #'.$new_Group->ID.' <b>'.$new_Group->get( 'name' ).'</b>' );
+				return $new_Group;
+			}
+		}
+
+		$r = false;
+		return $r;
+	}
+
+
+	/**
+	 * Update secondary groups for User
+	 *
+	 * @param object User
+	 * @param array Secondary groups
+	 * @param integer Template secondary group ID
+	 * 
+	 */
+	function usersecgroup_update( & $User, $secondary_groups, $template_secondary_group_ID )
+	{
+		global $DB;
+
+		// It seems some transaction is not finished so two SQL queries cannot be executed without this commit:
+		$DB->commit();
+
+		// Remove the user from all previous secondary groups in order to replace them with new:
+		$DB->query( 'DELETE FROM T_users__secondary_user_groups WHERE sug_user_ID = '.$User->ID,
+			'Delete the User #'.$User->ID.' from old secondary groups' );
+
+		if( empty( $secondary_groups ) )
+		{	// No new secondary groups to link with user:
+			return;
+		}
+
+		// Get what secondary groups exist in DB:
+		$SQL = new SQL();
+		$SQL->SELECT( 'grp_ID, grp_name' );
+		$SQL->FROM( 'T_groups' );
+		$SQL->WHERE( 'grp_usage = "secondary"' );
+		$SQL->WHERE_and( 'grp_name IN ( '.$DB->quote( $secondary_groups ).' )' );
+		$existing_secondary_groups = $DB->get_assoc( $SQL->get(), 'Get what secondary groups exist in DB for LDAP request' );
+
+		// Get what secondary groups don't exist in DB and they should be created:
+		$unexisting_secondary_groups = array_udiff( $secondary_groups, $existing_secondary_groups, 'strcasecmp' );
+
+		// Save IDs of all current secondary groups in order to don't lose them:
+		$new_user_secondary_group_IDs = array_keys( $existing_secondary_groups );
+
+		if( count( $unexisting_secondary_groups ) )
+		{	// Create new secondary groups:
+			foreach( $unexisting_secondary_groups as $unexisting_secondary_group )
+			{
+				if( $new_secondary_Group = & $this->usergroup_create( $template_secondary_group_ID, $unexisting_secondary_group, 'secondary' ) )
+				{	// Add this secondary group to link with user:
+					$new_user_secondary_group_IDs[] = $new_secondary_Group->ID;
+				}
+			}
+		}
+
+		if( count( $new_user_secondary_group_IDs ) )
+		{	// Link the user with secondary groups:
+			$DB->query( 'INSERT INTO T_users__secondary_user_groups ( sug_user_ID, sug_grp_ID )
+					VALUES ( '.$User->ID.', '.implode( ' ), ( '.$User->ID.', ', $new_user_secondary_group_IDs ).' )',
+				'Link the User #'.$User->ID.' with secondary groups: '.implode( ', ', $new_user_secondary_group_IDs ) );
+
+			$this->debug_log( 'Assign User to Secondary Groups: '.implode( ', ', $new_user_secondary_group_IDs ) );
+		}
 	}
 }
 ?>
