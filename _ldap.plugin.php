@@ -69,7 +69,7 @@ class ldap_plugin extends Plugin
 	{
 		return array(
 				'requires' => array(
-					'app_min' => '6.7.0-alpha',
+					'app_min' => '6.6.6-stable',
 				),
 				'recommends' => array(
 					'app_min' => '6.7.0-alpha',
@@ -545,23 +545,31 @@ class ldap_plugin extends Plugin
 			// --- EXTRA GROUPS ---
 			if( !empty( $l_set['secondary_grp_search_filter'] ) )
 			{
-				$filter = str_replace( '%s', $params['login'], $l_set['secondary_grp_search_filter'] );
-				$this->debug_log( sprintf( 'Step 4 : Now querying for secondary groups. base_dn: <b>%s</b>, filter: <b>%s</b>', $l_set['secondary_grp_base_dn'], $filter ) );
-				$search_result = @ldap_search( $ldap_conn, $l_set['secondary_grp_base_dn'], $filter, array('cn') );
-				if( ! $search_result )
-				{ // this may happen with an empty base_dn
-					$this->debug_log( 'Invalid ldap_search result. No secondary groups will be assigned. Errno: '.ldap_errno($ldap_conn).' Error: '.ldap_error($ldap_conn) );
+				global $app_version;
+				if( evo_version_compare( $app_version, '6.7.0-alpha' ) < 0 )
+				{
+					$this->debug_log( 'Secondary groups not handled. This feature requires b2evolution v6.7.0-alpha or newer.' );
 				}
 				else
 				{
-					// $search_info = ldap_get_entries($ldap_conn, $search_result);
-					// Hardcode two secondary groups:
-					$search_info = array( 'Blog B members', 'Blog C Members' );
+					$filter = str_replace( '%s', $params['login'], $l_set['secondary_grp_search_filter'] );
+					$this->debug_log( sprintf( 'Step 4 : Now querying for secondary groups. base_dn: <b>%s</b>, filter: <b>%s</b>', $l_set['secondary_grp_base_dn'], $filter ) );
+					$search_result = @ldap_search( $ldap_conn, $l_set['secondary_grp_base_dn'], $filter, array('cn') );
+					if( ! $search_result )
+					{ // this may happen with an empty base_dn
+						$this->debug_log( 'Invalid ldap_search result. No secondary groups will be assigned. Errno: '.ldap_errno($ldap_conn).' Error: '.ldap_error($ldap_conn) );
+					}
+					else
+					{
+						$search_info = ldap_get_entries($ldap_conn, $search_result);
+						$this->debug_log( 'Results returned by LDAP Server: <pre>'.var_export( $search_info, true ).'</pre>' );
 
-					$this->debug_log( 'Results returned by LDAP Server: <pre>'.var_export( $search_info, true ).'</pre>' );
+						// Hardcode two secondary groups:
+						$search_info = array( 'Blog B members', 'Blog C Members' );
 
-					// Update secondary groups for the User:
-					$this->usersecgroup_update( $local_User, $search_info, $l_set['tpl_new_secondary_grp_ID'] );
+						// Update secondary groups for the User:
+						// $this->usersecgroup_update( $local_User, $search_info, $l_set['tpl_new_secondary_grp_ID'] );
+					}
 				}
 			}
 
