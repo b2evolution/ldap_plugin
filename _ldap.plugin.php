@@ -156,7 +156,17 @@ class ldap_plugin extends Plugin
 					'secondary_grp_search_filter' => array(
 						'label' => T_('Secondary Groups - Search filter'),
 						'note' => T_('The search filter used to get the list of groups we are interested in (filter at will) (%s gets replaced by the user login).').' '.sprintf( T_('E.g. &laquo;%s&raquo;'), 'objectClass=groupofuniquenames' ),
-						'size' => 40,
+						'size' => 60,
+					),
+					'secondary_grp_name_attribute' => array(
+						'label' => T_('Secondary Groups - Name Attribute'),
+						'note' => T_('Attribute to be used as teh group name.').' '.sprintf( T_('E.g. &laquo;cn&raquo;'), 'cn' ),
+						'size' => 10,
+					),
+					'secondary_grp_name_prefix' => array(
+						'label' => T_('Secondary Groups - Name Prefix'),
+						'note' => T_('Only groups with this prefix will be considered.').' '.sprintf( T_('E.g. &laquo;cms_&raquo;'), '' ),
+						'size' => 10,
 					),
 					'tpl_new_secondary_grp_ID' => array(
 						'label' => T_('Template for new secondary groups'),
@@ -550,11 +560,16 @@ class ldap_plugin extends Plugin
 				{
 					$this->debug_log( 'Secondary groups not handled. This feature requires b2evolution v6.7.0-alpha or newer.' );
 				}
+				elseif( empty($l_set['secondary_grp_name_attribute']) )
+				{
+					$this->debug_log( 'Missing name attribute for secondary groups' );		
+				}
 				else
 				{
 					$filter = str_replace( '%s', $params['login'], $l_set['secondary_grp_search_filter'] );
-					$this->debug_log( sprintf( 'Step 4 : Now querying for secondary groups. base_dn: <b>%s</b>, filter: <b>%s</b>', $l_set['secondary_grp_base_dn'], $filter ) );
-					$search_result = @ldap_search( $ldap_conn, $l_set['secondary_grp_base_dn'], $filter, array('cn') );
+					$grp_name_attribute = $l_set['secondary_grp_name_attribute'];
+					$this->debug_log( sprintf( 'Step 4 : Now querying for secondary groups. base_dn: <b>%s</b>, filter: <b>%s</b>, name attribue=<b>%s</b>', $l_set['secondary_grp_base_dn'], $filter, $grp_name_attribute ) );
+					$search_result = @ldap_search( $ldap_conn, $l_set['secondary_grp_base_dn'], $filter, array($grp_name_attribute) );
 					if( ! $search_result )
 					{ // this may happen with an empty base_dn
 						$this->debug_log( 'Invalid ldap_search result. No secondary groups will be assigned. Errno: '.ldap_errno($ldap_conn).' Error: '.ldap_error($ldap_conn) );
@@ -562,13 +577,37 @@ class ldap_plugin extends Plugin
 					else
 					{
 						$search_info = ldap_get_entries($ldap_conn, $search_result);
-						$this->debug_log( 'Results returned by LDAP Server: <pre>'.var_export( $search_info, true ).'</pre>' );
+						// $this->debug_log( 'Results returned by LDAP Server: <pre>'.var_export( $search_info, true ).'</pre>' );
+
+						$secondary_groups = array();
+
+						// $this->debug_log( 'Secondary groups name prefix: <pre>'.var_export( $l_set['secondary_grp_name_prefix'], true ).'</pre>' );
+
+						// Walk through results:
+						foreach( $search_info as $group_candidate )
+						{
+							if( is_array( $group_candidate ) && isset($group_candidate[$grp_name_attribute][0]) )
+							{
+								$group_candidate_cn = $group_candidate[$grp_name_attribute][0];
+								if( empty($l_set['secondary_grp_name_prefix']) || strpos($group_candidate_cn, $l_set['secondary_grp_name_prefix']) === 0 )
+								{	// prefix is ok
+									$this->debug_log( 'Accepted Secondary Group: '.$group_candidate_cn );
+									$secondary_groups[] = $group_candidate_cn;
+								}
+								else
+								{	// prefix is NOT ok
+									$this->debug_log( 'REJECTED Secondary Group: '.$group_candidate_cn );
+								}
+							}
+						}
 
 						// Hardcode two secondary groups:
-						$search_info = array( 'Blog B members', 'Blog C Members' );
+						// $secondary_groups = array( 'Blog B members', 'Blog D Members' );
+					
+						$this->debug_log( 'Secondary groups to be assigned: <pre>'.var_export( $secondary_groups, true ).'</pre>' );
 
 						// Update secondary groups for the User:
-						// $this->usersecgroup_update( $local_User, $search_info, $l_set['tpl_new_secondary_grp_ID'] );
+						$this->usersecgroup_update( $local_User, $secondary_groups, $l_set['tpl_new_secondary_grp_ID'] );
 					}
 				}
 			}
