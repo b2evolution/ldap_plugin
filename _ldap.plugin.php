@@ -557,7 +557,7 @@ class ldap_plugin extends Plugin
 			{
 				global $app_version;
 				if( evo_version_compare( $app_version, '6.7.0-alpha' ) < 0 )
-				{
+				{	// The plugin is used on b2evo 6.6
 					$this->debug_log( 'Secondary groups not handled. This feature requires b2evolution v6.7.0-alpha or newer.' );
 				}
 				elseif( empty($l_set['secondary_grp_name_attribute']) )
@@ -854,6 +854,8 @@ class ldap_plugin extends Plugin
 	 */
 	function userorg_get_by_name( $org_name )
 	{
+		global $app_version;
+
 		if( is_null( $this->organizations ) )
 		{	// Load all user field groups in cache on first time request:
 			global $DB;
@@ -872,7 +874,10 @@ class ldap_plugin extends Plugin
 			load_class( 'users/model/_organization.class.php', 'Organization' );
 
 			$Organization = new Organization();
-			$Organization->set( 'owner_user_ID', '1' );
+			if( evo_version_compare( $app_version, '6.7.0-alpha' ) >= 0 )
+			{	// The plugin is used on b2evo 6.7+
+				$Organization->set( 'owner_user_ID', '1' );
+			}
 			$Organization->set( 'name', $org_name );
 			if( $Organization->dbinsert() )
 			{	// New user field group has been created
@@ -1084,6 +1089,8 @@ class ldap_plugin extends Plugin
 	 */
 	function usergroup_create( $template_group_ID, $group_name, $usage = 'primary' )
 	{
+		global $app_version;
+
 		$GroupCache = & get_Cache( 'GroupCache' );
 		if( ! $template_Group = $GroupCache->get_by_ID( $template_group_ID, false ) ) // COPY!! and do not halt on error
 		{
@@ -1108,7 +1115,10 @@ class ldap_plugin extends Plugin
 			}
 			$new_Group->set( 'ID', 0 ); // unset ID (to allow inserting)
 			$new_Group->set( 'name', $group_name ); // set the wanted name
-			$new_Group->set( 'usage', $usage );
+			if( evo_version_compare( $app_version, '6.7.0-alpha' ) >= 0 )
+			{	// The plugin is used on b2evo 6.7+
+				$new_Group->set( 'usage', $usage );
+			}
 
 			// Get settings of the template group:
 			$GroupSettings = & $new_Group->get_GroupSettings();
