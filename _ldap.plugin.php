@@ -42,7 +42,7 @@ if( !defined('EVO_MAIN_INIT') ) die( 'Please, do not access this page directly.'
  */
 class ldap_plugin extends Plugin
 {
-	var $version = '6.7.1-beta';
+	var $version = '6.7.2-beta';
 	var $group = 'authentication';
 	var $code = 'evo_ldap_auth';
 	var $priority = 50;
@@ -1092,7 +1092,11 @@ class ldap_plugin extends Plugin
 		global $app_version;
 
 		$GroupCache = & get_Cache( 'GroupCache' );
-		if( ! $template_Group = $GroupCache->get_by_ID( $template_group_ID, false ) ) // COPY!! and do not halt on error
+		if( empty($template_group_ID) )
+		{
+			$this->debug_log( 'No template Group ID provided!' );
+		}
+		elseif( ! $template_Group = $GroupCache->get_by_ID( $template_group_ID, false ) ) // COPY!! and do not halt on error
 		{
 			$this->debug_log( 'Template with Group ID #'.$template_group_ID.' not found!' );
 		}
