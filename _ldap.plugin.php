@@ -182,6 +182,24 @@ class ldap_plugin extends Plugin
 
 
 	/**
+	 * Define here default user settings
+	 *
+	 * @return array
+	 */
+	function GetDefaultUserSettings()
+	{
+		return array(
+				// It is a hidden setting, Used only to remember what number of ldap settings worked on last user logging action:
+				'search_set_num' => array(
+					'label' => '', // keep empty to hide on used edit advanced form
+					'defaultvalue' => 0, // use first settings by default
+					'type' => 'string'
+				),
+			);
+	}
+
+
+	/**
 	 * Event handler: called when a user attemps to login.
 	 *
 	 * This function will check if the user exists in the LDAP directory and create it locally if it does not.
@@ -214,6 +232,15 @@ class ldap_plugin extends Plugin
 		{
 			$this->debug_log( 'User <b>'.$params['login'].'</b> already exists locally. We will UPDATE it with the latest LDAP attibutes.' );
 			$update_mode = true;
+
+			// Try to find a number of a search set which was used on successful logging previous time by current user:
+			$user_search_set_num = intval( $this->UserSettings->get( 'search_set_num', $local_User->ID ) );
+			if( $user_search_set_num > 0 && isset( $search_sets[ $user_search_set_num ] ) )
+			{	// We have found this, Reorder the array to use the successful set firstly:
+				$success_search_set = $search_sets[ $user_search_set_num ];
+				unset( $search_sets[ $user_search_set_num ] );
+				$search_sets = array( $user_search_set_num => $success_search_set ) + $search_sets;
+			}
 		}
 		else
 			$update_mode = false;
@@ -222,7 +249,7 @@ class ldap_plugin extends Plugin
 		$this->debug_log( sprintf('LDAP plugin will attempt to login with login=<b>%s</b> / pass=<b>%s</b> / MD5 pass=<b>%s</b>', $params['login'], $params['pass'], $params['pass_md5']) );
 
 		// ------ Loop through list of configured LDAP Servers: ------
-		foreach( $search_sets as $l_id=>$l_set )
+		foreach( $search_sets as $l_id => $l_set )
 		{
 			$this->debug_log( 'Step 1 : STARTING LDAP AUTH WITH SERVER #'.$l_id );
 
@@ -540,6 +567,10 @@ class ldap_plugin extends Plugin
 				$UserCache->add( $local_User );
 				$this->debug_log( 'OK -- User has been created.' );
 			}
+
+			// Remember this settings number in order use this first in next logging time by current user:
+			$this->UserSettings->set( 'search_set_num', $l_id, $local_User->ID );
+			$this->UserSettings->dbupdate();
 
 			// Assign user to organizations:
 			$this->userorg_assign_to_user( $local_User );
