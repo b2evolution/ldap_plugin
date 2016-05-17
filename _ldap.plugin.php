@@ -78,7 +78,7 @@ class ldap_plugin extends Plugin
 	}
 
 
-	function GetDefaultSettings()
+	function GetDefaultSettings( & $params )
 	{
 		global $Settings, $app_version;
 
@@ -186,7 +186,7 @@ class ldap_plugin extends Plugin
 	 *
 	 * @return array
 	 */
-	function GetDefaultUserSettings()
+	function GetDefaultUserSettings( & $params )
 	{
 		return array(
 				// It is a hidden setting, Used only to remember what number of ldap settings worked on last user logging action:
@@ -206,7 +206,7 @@ class ldap_plugin extends Plugin
 	 *
 	 * @param array 'login', 'pass' and 'pass_md5'
 	 */
-	function LoginAttempt( $params )
+	function LoginAttempt( & $params )
 	{
 		global $localtimenow;
 		global $Settings, $Hit;
