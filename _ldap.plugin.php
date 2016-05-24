@@ -42,7 +42,7 @@ if( !defined('EVO_MAIN_INIT') ) die( 'Please, do not access this page directly.'
  */
 class ldap_plugin extends Plugin
 {
-	var $version = '6.7.3-beta';
+	var $version = '6.7.3';
 	var $group = 'authentication';
 	var $code = 'evo_ldap_auth';
 	var $priority = 50;
