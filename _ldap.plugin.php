@@ -406,14 +406,14 @@ class ldap_plugin extends Plugin
 			if( isset($search_info[0]['givenname'][0]))
 			{
 				$this->debug_log( 'First name (givenname): <b>'.$search_info[0]['givenname'][0].'</b>' );
-				$local_User->set( 'firstname', $search_info[0]['givenname'][0] );
+				$local_User->set( 'firstname', utf8_encode( $search_info[0]['givenname'][0] ) );
 			}
 
 			// sn -> Lastname:
 			if( isset($search_info[0]['sn'][0]))
 			{
 				$this->debug_log( 'Last name (sn): <b>'.$search_info[0]['sn'][0].'</b>' );
-				$local_User->set( 'lastname', $search_info[0]['sn'][0] );
+				$local_User->set( 'lastname', utf8_encode( $search_info[0]['sn'][0] ) );
 			}
 
 			// roomnumber -> user field "roomnumber" (if not found, autocreate it in group "Address")
@@ -503,7 +503,8 @@ class ldap_plugin extends Plugin
 					if( isset($search_info[0][$l_set['assign_user_to_group_by']])
 					 && isset($search_info[0][$l_set['assign_user_to_group_by']][0]) )
 					{ // There is info we want to assign by
-						$assign_by_value = $search_info[0][$l_set['assign_user_to_group_by']][0];
+						// Convert data from 3rd party site to UTF-8 encoding:
+						$assign_by_value = utf8_encode( $search_info[0][$l_set['assign_user_to_group_by']][0] );
 						$this->debug_log( 'User info says has '.$l_set['assign_user_to_group_by'].' = "<b>'.$assign_by_value.'</b>"' );
 
 						$GroupCache = & get_Cache( 'GroupCache' );
@@ -686,7 +687,9 @@ class ldap_plugin extends Plugin
 	 */
 	function userfield_update_by_code( & $User, $field_code, $field_value, $field_group_name, $field_name )
 	{
-		$field_value = utf8_trim( $field_value );
+		// Convert data from 3rd party site to UTF-8 encoding:
+		$field_value = utf8_trim( utf8_encode( $field_value ) );
+
 		if( empty( $field_value ) )
 		{	// Don't add an user field with empty value:
 			return;
@@ -758,7 +761,6 @@ class ldap_plugin extends Plugin
 	 */
 	function userfield_get_by_code( $field_code, $field_group_name, $field_name )
 	{
-
 		if( is_null( $this->userfields ) )
 		{	// Load all user fields in cache on first time request:
 			global $DB;
@@ -860,7 +862,9 @@ class ldap_plugin extends Plugin
 	 */
 	function userorg_update_by_name( & $User, $org_name, $org_role = '' )
 	{
-		$org_name = utf8_trim( $org_name );
+		// Convert data from 3rd party site to UTF-8 encoding:
+		$org_name = utf8_trim( utf8_encode( $org_name ) );
+
 		if( empty( $org_name ) )
 		{	// Don't update an user organization with empty name:
 			return;
