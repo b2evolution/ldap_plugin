@@ -117,6 +117,11 @@ class ldap_plugin extends Plugin
 						),
 						'note' => $this->T_('A specific protocol version, or "auto" for "current one, then 3 and 2".'),
 					),
+					'encoding' => array(
+						'label' => T_('Data encoding'),
+						'note' => sprintf( T_('Data encoding of the LDAP server if it is not UTF-8. E.g. %s'), 'ISO-8859-1, UTF-16, KOI8-R, CP1250.' ),
+						'size' => 10,
+					),
 					'rdn' => array(
 						'label' => T_('RDN for binding/authenticating'),
 						'note' => T_('The LDAP RDN, used to bind to the server (%s gets replaced by the user login).').' '.sprintf( T_('E.g. &laquo;%s&raquo;'), 'cn=%s,ou=Users,o=Organisation' ),
@@ -209,7 +214,7 @@ class ldap_plugin extends Plugin
 	function LoginAttempt( & $params )
 	{
 		global $localtimenow;
-		global $Settings, $Hit;
+		global $Settings, $Hit, $current_charset;
 
 		// Check if LDAP is available:
 		if( !function_exists( 'ldap_connect' ) )
@@ -383,6 +388,18 @@ class ldap_plugin extends Plugin
 
 			$local_User->set( 'status', 'autoactivated' ); // Activate the user automatically (no email activation necessary)
 
+			// Convert each input string to current server encoding:
+			if( isset( $search_info[0] ) && is_array( $search_info[0] ) )
+			{
+				foreach( $search_info[0] as $search_info_key => $search_info_data )
+				{
+					if( isset( $search_info_data[0] ) && is_string( $search_info_data[0] ) )
+					{	// Convert string from LDAP server encoding to current server encoding:
+						$search_info[0][ $search_info_key ][0] = convert_charset( $search_info_data[0], $l_set['encoding'], $evo_charset );
+					}
+				}
+			}
+
 			// Make some updates:
 
 			// mail -> email:
@@ -406,14 +423,14 @@ class ldap_plugin extends Plugin
 			if( isset($search_info[0]['givenname'][0]))
 			{
 				$this->debug_log( 'First name (givenname): <b>'.$search_info[0]['givenname'][0].'</b>' );
-				$local_User->set( 'firstname', utf8_encode( $search_info[0]['givenname'][0] ) );
+				$local_User->set( 'firstname', $search_info[0]['givenname'][0] );
 			}
 
 			// sn -> Lastname:
 			if( isset($search_info[0]['sn'][0]))
 			{
 				$this->debug_log( 'Last name (sn): <b>'.$search_info[0]['sn'][0].'</b>' );
-				$local_User->set( 'lastname', utf8_encode( $search_info[0]['sn'][0] ) );
+				$local_User->set( 'lastname', $search_info[0]['sn'][0] );
 			}
 
 			// roomnumber -> user field "roomnumber" (if not found, autocreate it in group "Address")
@@ -503,8 +520,7 @@ class ldap_plugin extends Plugin
 					if( isset($search_info[0][$l_set['assign_user_to_group_by']])
 					 && isset($search_info[0][$l_set['assign_user_to_group_by']][0]) )
 					{ // There is info we want to assign by
-						// Convert data from 3rd party site to UTF-8 encoding:
-						$assign_by_value = utf8_encode( $search_info[0][$l_set['assign_user_to_group_by']][0] );
+						$assign_by_value = $search_info[0][$l_set['assign_user_to_group_by']][0];
 						$this->debug_log( 'User info says has '.$l_set['assign_user_to_group_by'].' = "<b>'.$assign_by_value.'</b>"' );
 
 						$GroupCache = & get_Cache( 'GroupCache' );
@@ -594,7 +610,7 @@ class ldap_plugin extends Plugin
 				}
 				elseif( empty($l_set['secondary_grp_name_attribute']) )
 				{
-					$this->debug_log( 'Missing name attribute for secondary groups' );		
+					$this->debug_log( 'Missing name attribute for secondary groups' );
 				}
 				else
 				{
@@ -687,8 +703,7 @@ class ldap_plugin extends Plugin
 	 */
 	function userfield_update_by_code( & $User, $field_code, $field_value, $field_group_name, $field_name )
 	{
-		// Convert data from 3rd party site to UTF-8 encoding:
-		$field_value = utf8_trim( utf8_encode( $field_value ) );
+		$field_value = utf8_trim( $field_value );
 
 		if( empty( $field_value ) )
 		{	// Don't add an user field with empty value:
@@ -862,8 +877,7 @@ class ldap_plugin extends Plugin
 	 */
 	function userorg_update_by_name( & $User, $org_name, $org_role = '' )
 	{
-		// Convert data from 3rd party site to UTF-8 encoding:
-		$org_name = utf8_trim( utf8_encode( $org_name ) );
+		$org_name = utf8_trim( $org_name );
 
 		if( empty( $org_name ) )
 		{	// Don't update an user organization with empty name:
