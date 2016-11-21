@@ -214,7 +214,7 @@ class ldap_plugin extends Plugin
 	function LoginAttempt( & $params )
 	{
 		global $localtimenow;
-		global $Settings, $Hit, $current_charset;
+		global $Settings, $Hit, $evo_charset;
 
 		// Check if LDAP is available:
 		if( !function_exists( 'ldap_connect' ) )
@@ -389,11 +389,13 @@ class ldap_plugin extends Plugin
 			$local_User->set( 'status', 'autoactivated' ); // Activate the user automatically (no email activation necessary)
 
 			// Convert each input string to current server encoding:
+			$exclude_encoding_fields = array( 'uid', 'mail', 'jpegphoto' );
 			if( isset( $search_info[0] ) && is_array( $search_info[0] ) )
 			{
 				foreach( $search_info[0] as $search_info_key => $search_info_data )
 				{
-					if( isset( $search_info_data[0] ) && is_string( $search_info_data[0] ) )
+					if( isset( $search_info_data[0] ) && is_string( $search_info_data[0] ) &&
+					    ! in_array( $search_info_key, $exclude_encoding_fields ) )
 					{	// Convert string from LDAP server encoding to current server encoding:
 						$search_info[0][ $search_info_key ][0] = convert_charset( $search_info_data[0], $l_set['encoding'], $evo_charset );
 					}
