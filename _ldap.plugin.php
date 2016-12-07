@@ -782,13 +782,22 @@ class ldap_plugin extends Plugin
 		{	// Load all user fields in cache on first time request:
 			global $DB;
 			$SQL = new SQL();
-			$SQL->SELECT( 'ufdf_code, ufdf_ID' );
+			$SQL->SELECT( 'ufdf_ID, ufdf_code' );
 			$SQL->FROM( 'T_users__fielddefs' );
 			$this->userfields = $DB->get_assoc( $SQL->get(), 'Load all user fields in cache array of LDAP plugin' );
+
+			// Convert all user field codes to lowercase:
+			$this->userfields = array_map( 'utf8_strtolower', $this->userfields );
 		}
 
-		if( ! isset( $this->userfields[ $field_code ] ) )
-		{	// Create new user field if it is not found in DB:
+		// Code MUST be lowercase ASCII only:
+		$field_code = utf8_strtolower( $field_code );
+
+		// Check if requested user field code already exists in DB:
+		$field_ID = array_search( $field_code, $this->userfields );
+
+		if( $field_ID === false )
+		{	// No user field in DB, Try to create new:
 
 			$field_group_ID = $this->userfield_get_group_by_name( $field_group_name );
 			if( ! $field_group_ID )
@@ -809,21 +818,17 @@ class ldap_plugin extends Plugin
 			$Userfield->set( 'order', $Userfield->get_last_order( $field_group_ID ) );
 			$Userfield->set( 'duplicated', 'forbidden' );
 			if( $Userfield->dbinsert() )
-			{	// New user field has been created, Add it in cache array:
-				$this->userfields[ $field_code ] = $Userfield->ID;
+			{	// New user field has been created
+				$field_ID = $Userfield->ID;
+
+				// Add new user field code in cache array:
+				$this->userfields[ $field_ID ] = $field_code;
 
 				$this->debug_log( sprintf( 'New user field "%s" has been created in system', $field_name ) );
 			}
 		}
 
-		if( isset( $this->userfields[ $field_code ] ) )
-		{	// Return ID of user field by ID:
-			return $this->userfields[ $field_code ];
-		}
-		else
-		{	// No user field found by code:
-			return false;
-		}
+		return $field_ID;
 	}
 
 
@@ -842,9 +847,13 @@ class ldap_plugin extends Plugin
 			$SQL->SELECT( 'ufgp_ID, ufgp_name' );
 			$SQL->FROM( 'T_users__fieldgroups' );
 			$this->userfield_groups = $DB->get_assoc( $SQL->get(), 'Load all user field groups in cache array of LDAP plugin' );
+
+			// Convert all user field group names to lowercase:
+			$this->userfield_groups = array_map( 'utf8_strtolower', $this->userfield_groups );
 		}
 
-		$field_group_ID = array_search( $field_group_name, $this->userfield_groups );
+		// Check if requested user field group already exists in DB:
+		$field_group_ID = array_search( utf8_strtolower( $field_group_name ), $this->userfield_groups );
 
 		if( $field_group_ID === false )
 		{	// No user field group in DB, Try to create new:
@@ -860,7 +869,7 @@ class ldap_plugin extends Plugin
 				$field_group_ID = $UserfieldGroup->ID;
 
 				// Add new user field group in cache array:
-				$this->userfield_groups[ $field_group_ID ] = $field_group_name;
+				$this->userfield_groups[ $field_group_ID ] = utf8_strtolower( $field_group_name );
 
 				$this->debug_log( sprintf( 'New user field group "%s" has been created in system', $field_group_name ) );
 			}
@@ -914,9 +923,13 @@ class ldap_plugin extends Plugin
 			$SQL->SELECT( 'org_ID, org_name' );
 			$SQL->FROM( 'T_users__organization' );
 			$this->organizations = $DB->get_assoc( $SQL->get(), 'Load all organizations in cache array of LDAP plugin' );
+
+			// Convert all organization names to lowercase:
+			$this->organizations = array_map( 'utf8_strtolower', $this->organizations );
 		}
 
-		$org_ID = array_search( $org_name, $this->organizations );
+		// Check if requested organization already exists in DB:
+		$org_ID = array_search( utf8_strtolower( $org_name ), $this->organizations );
 
 		if( $org_ID === false )
 		{	// No organization in DB, Try to create new:
@@ -931,11 +944,11 @@ class ldap_plugin extends Plugin
 			}
 			$Organization->set( 'name', $org_name );
 			if( $Organization->dbinsert() )
-			{	// New user field group has been created
+			{	// New organization has been created
 				$org_ID = $Organization->ID;
 
-				// Add new user field group in cache array:
-				$this->organizations[ $org_ID ] = $org_name;
+				// Add new organization in cache array:
+				$this->organizations[ $org_ID ] = utf8_strtolower( $org_name );
 
 				$this->debug_log( sprintf( 'New organization "%s" has been created in system', $org_name ) );
 			}
