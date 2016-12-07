@@ -778,16 +778,16 @@ class ldap_plugin extends Plugin
 	 */
 	function userfield_get_by_code( $field_code, $field_group_name, $field_name )
 	{
-		global $DB;
+		if( is_null( $this->userfields ) )
+		{	// Load all user fields in cache on first time request:
+			global $DB;
+			$SQL = new SQL();
+			$SQL->SELECT( 'ufdf_code, ufdf_ID' );
+			$SQL->FROM( 'T_users__fielddefs' );
+			$this->userfields = $DB->get_assoc( $SQL->get(), 'Load all user fields in cache array of LDAP plugin' );
+		}
 
-		// Check if a requested user field already exists in DB:
-		$SQL = new SQL( 'LDAP plugin: Check if a requested user field already exists in DB' );
-		$SQL->SELECT( 'ufdf_ID' );
-		$SQL->FROM( 'T_users__fielddefs' );
-		$SQL->WHERE( 'ufdf_code = '.$DB->quote( $field_code ) );
-		$userfield_ID = $DB->get_var( $SQL->get(), 0, NULL, $SQL->title );
-
-		if( empty( $userfield_ID ) )
+		if( ! isset( $this->userfields[ $field_code ] ) )
 		{	// Create new user field if it is not found in DB:
 
 			$field_group_ID = $this->userfield_get_group_by_name( $field_group_name );
@@ -810,15 +810,15 @@ class ldap_plugin extends Plugin
 			$Userfield->set( 'duplicated', 'forbidden' );
 			if( $Userfield->dbinsert() )
 			{	// New user field has been created, Add it in cache array:
-				$userfield_ID = $Userfield->ID;
+				$this->userfields[ $field_code ] = $Userfield->ID;
 
 				$this->debug_log( sprintf( 'New user field "%s" has been created in system', $field_name ) );
 			}
 		}
 
-		if( ! empty( $userfield_ID ) )
-		{	// Return ID of user field:
-			return $userfield_ID;
+		if( isset( $this->userfields[ $field_code ] ) )
+		{	// Return ID of user field by ID:
+			return $this->userfields[ $field_code ];
 		}
 		else
 		{	// No user field found by code:
@@ -835,16 +835,18 @@ class ldap_plugin extends Plugin
 	 */
 	function userfield_get_group_by_name( $field_group_name )
 	{
-		global $DB;
+		if( is_null( $this->userfield_groups ) )
+		{	// Load all user field groups in cache on first time request:
+			global $DB;
+			$SQL = new SQL();
+			$SQL->SELECT( 'ufgp_ID, ufgp_name' );
+			$SQL->FROM( 'T_users__fieldgroups' );
+			$this->userfield_groups = $DB->get_assoc( $SQL->get(), 'Load all user field groups in cache array of LDAP plugin' );
+		}
 
-		// Check if a requested user field group already exists in DB:
-		$SQL = new SQL( 'LDAP plugin: Check if a requested user field group already exists in DB' );
-		$SQL->SELECT( 'ufgp_ID' );
-		$SQL->FROM( 'T_users__fieldgroups' );
-		$SQL->WHERE( 'ufgp_name = '.$DB->quote( $field_group_name ) );
-		$field_group_ID = $DB->get_var( $SQL->get(), 0, NULL, $SQL->title );
+		$field_group_ID = array_search( $field_group_name, $this->userfield_groups );
 
-		if( empty( $field_group_ID ) )
+		if( $field_group_ID === false )
 		{	// No user field group in DB, Try to create new:
 
 			// Load UserfieldGroup class:
@@ -856,6 +858,9 @@ class ldap_plugin extends Plugin
 			if( $UserfieldGroup->dbinsert() )
 			{	// New user field group has been created
 				$field_group_ID = $UserfieldGroup->ID;
+
+				// Add new user field group in cache array:
+				$this->userfield_groups[ $field_group_ID ] = $field_group_name;
 
 				$this->debug_log( sprintf( 'New user field group "%s" has been created in system', $field_group_name ) );
 			}
@@ -900,16 +905,20 @@ class ldap_plugin extends Plugin
 	 */
 	function userorg_get_by_name( $org_name )
 	{
-		global $app_version, $DB;
+		global $app_version;
 
-		// Check if a requested organization already exists in DB:
-		$SQL = new SQL( 'LDAP plugin: Check if a requested organization already exists in DB' );
-		$SQL->SELECT( 'org_ID' );
-		$SQL->FROM( 'T_users__organization' );
-		$SQL->WHERE( 'org_name = '.$DB->quote( $org_name ) );
-		$org_ID = $DB->get_var( $SQL->get(), 0, NULL, $SQL->title );
+		if( is_null( $this->organizations ) )
+		{	// Load all user field groups in cache on first time request:
+			global $DB;
+			$SQL = new SQL();
+			$SQL->SELECT( 'org_ID, org_name' );
+			$SQL->FROM( 'T_users__organization' );
+			$this->organizations = $DB->get_assoc( $SQL->get(), 'Load all organizations in cache array of LDAP plugin' );
+		}
 
-		if( empty( $org_ID ) )
+		$org_ID = array_search( $org_name, $this->organizations );
+
+		if( $org_ID === false )
 		{	// No organization in DB, Try to create new:
 
 			// Load Organization class:
@@ -924,6 +933,9 @@ class ldap_plugin extends Plugin
 			if( $Organization->dbinsert() )
 			{	// New user field group has been created
 				$org_ID = $Organization->ID;
+
+				// Add new user field group in cache array:
+				$this->organizations[ $org_ID ] = $org_name;
 
 				$this->debug_log( sprintf( 'New organization "%s" has been created in system', $org_name ) );
 			}
@@ -1126,7 +1138,7 @@ class ldap_plugin extends Plugin
 	 * @param string Group name
 	 * @param string Group usage: 'primary', 'secondary'
 	 */
-	function & usergroup_create( $template_group_ID, $group_name, $usage = 'primary' )
+	function usergroup_create( $template_group_ID, $group_name, $usage = 'primary' )
 	{
 		global $app_version;
 
