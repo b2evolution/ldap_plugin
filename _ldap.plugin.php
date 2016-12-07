@@ -439,42 +439,42 @@ class ldap_plugin extends Plugin
 			if( isset($search_info[0]['roomnumber'][0]))
 			{
 				$this->debug_log( 'Room number: <b>'.$search_info[0]['roomnumber'][0].'</b>' );
-				$this->userfield_update_by_code( $local_User, 'roomnumber', $search_info[0]['roomnumber'][0], 'Address', 'Room Number' );
+				$this->userfield_update_by_code( $local_User, 'roomnumber', $search_info[0]['roomnumber'][0], 'Address', 'Room Number', 'word' );
 			}
 
 			// businesscategory -> user field "businesscategory" (if not found, autocreate it in group "About me")
 			if( isset($search_info[0]['businesscategory'][0]))
 			{
 				$this->debug_log( 'Business Category: <b>'.$search_info[0]['businesscategory'][0].'</b>' );
-				$this->userfield_update_by_code( $local_User, 'businesscategory', $search_info[0]['businesscategory'][0], 'About me', 'Business Category' );
+				$this->userfield_update_by_code( $local_User, 'businesscategory', $search_info[0]['businesscategory'][0], 'About me', 'Business Category', 'text' );
 			}
 
 			// telephonenumber -> user field "officephone" (if not found, autocreate it in group "Phone")
 			if( isset($search_info[0]['telephonenumber'][0]))
 			{
 				$this->debug_log( 'Office phone: <b>'.$search_info[0]['telephonenumber'][0].'</b>' );
-				$this->userfield_update_by_code( $local_User, 'officephone', $search_info[0]['telephonenumber'][0], 'Phone', 'Office phone' );
+				$this->userfield_update_by_code( $local_User, 'officephone', $search_info[0]['telephonenumber'][0], 'Phone', 'Office phone', 'phone' );
 			}
 
 			// mobile -> user field "cellphone" (if not found, autocreate it in group "Phone")
 			if( isset($search_info[0]['mobile'][0]))
 			{
 				$this->debug_log( 'Cell phone: <b>'.$search_info[0]['mobile'][0].'</b>' );
-				$this->userfield_update_by_code( $local_User, 'cellphone', $search_info[0]['mobile'][0], 'Phone', 'Cell phone' );
+				$this->userfield_update_by_code( $local_User, 'cellphone', $search_info[0]['mobile'][0], 'Phone', 'Cell phone', 'phone' );
 			}
 
 			// employeenumber -> user field "employeenumber" (if not found, autocreate it in group "About me")
 			if( isset($search_info[0]['employeenumber'][0]))
 			{
 				$this->debug_log( 'Employee number: <b>'.$search_info[0]['employeenumber'][0].'</b>' );
-				$this->userfield_update_by_code( $local_User, 'employeenumber', $search_info[0]['employeenumber'][0], 'About me', 'Employee number' );
+				$this->userfield_update_by_code( $local_User, 'employeenumber', $search_info[0]['employeenumber'][0], 'About me', 'Employee number', 'word' );
 			}
 
 			// title -> user field "title" (if not found, autocreate it in group "About me")
 			if( isset($search_info[0]['title'][0]))
 			{
 				$this->debug_log( 'Title: <b>'.$search_info[0]['title'][0].'</b>' );
-				$this->userfield_update_by_code( $local_User, 'title', $search_info[0]['title'][0], 'About me', 'Title' );
+				$this->userfield_update_by_code( $local_User, 'title', $search_info[0]['title'][0], 'About me', 'Title', 'word' );
 				$userfield_title = $search_info[0]['title'][0]; // Use this as role for all organizations below
 			}
 			else
@@ -500,7 +500,7 @@ class ldap_plugin extends Plugin
 			if( isset($search_info[0]['telexnumber'][0]))
 			{
 				$this->debug_log( 'Office FAX: <b>'.$search_info[0]['telexnumber'][0].'</b>' );
-				$this->userfield_update_by_code( $local_User, 'officefax', $search_info[0]['telexnumber'][0], 'Phone', 'Office FAX' );
+				$this->userfield_update_by_code( $local_User, 'officefax', $search_info[0]['telexnumber'][0], 'Phone', 'Office FAX', 'phone' );
 			}
 
 
@@ -702,8 +702,9 @@ class ldap_plugin extends Plugin
 	 * @param string Field value
 	 * @param string Field group name
 	 * @param string Field name
+	 * @param string Field type: 'text', 'word', 'email', 'number', 'phone', 'url'
 	 */
-	function userfield_update_by_code( & $User, $field_code, $field_value, $field_group_name, $field_name )
+	function userfield_update_by_code( & $User, $field_code, $field_value, $field_group_name, $field_name, $field_type )
 	{
 		$field_value = utf8_trim( $field_value );
 
@@ -713,7 +714,7 @@ class ldap_plugin extends Plugin
 		}
 
 		// Get user field ID by code:
-		$field_ID = $this->userfield_get_by_code( $field_code, $field_group_name, $field_name );
+		$field_ID = $this->userfield_get_by_code( $field_code, $field_group_name, $field_name, $field_type );
 
 		if( ! $field_ID )
 		{	// Some error on creating new user field, We cannot update this field:
@@ -774,9 +775,10 @@ class ldap_plugin extends Plugin
 	 * @param string Field code
 	 * @param string Field group name
 	 * @param string Field name
+	 * @param string Field type: 'text', 'word', 'email', 'number', 'phone', 'url'
 	 * @return integer Field ID
 	 */
-	function userfield_get_by_code( $field_code, $field_group_name, $field_name )
+	function userfield_get_by_code( $field_code, $field_group_name, $field_name, $field_type )
 	{
 		if( is_null( $this->userfields ) )
 		{	// Load all user fields in cache on first time request:
@@ -814,7 +816,7 @@ class ldap_plugin extends Plugin
 			$Userfield->set( 'code', $field_code );
 			$Userfield->set( 'ufgp_ID', $field_group_ID );
 			$Userfield->set( 'name', $field_name );
-			$Userfield->set( 'type', 'word' );
+			$Userfield->set( 'type', $field_type );
 			$Userfield->set( 'order', $Userfield->get_last_order( $field_group_ID ) );
 			$Userfield->set( 'duplicated', 'forbidden' );
 			if( $Userfield->dbinsert() )
