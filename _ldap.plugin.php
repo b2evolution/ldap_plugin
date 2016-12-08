@@ -205,6 +205,20 @@ class ldap_plugin extends Plugin
 
 
 	/**
+	 * Check ping service URL and plugin code.
+	 */
+	function BeforeEnable()
+	{
+		if( version_compare( phpversion(), '5.3', '<' ) )
+		{	// It is required for function Normalizer::normalize() of extension PECL intl >= 1.0.0 which is bundled with PHP since version 5.3
+			return T_('PHP 5 >= 5.3.0 is required for this plugin.');
+		}
+
+		return true;
+	}
+
+
+	/**
 	 * Event handler: called when a user attemps to login.
 	 *
 	 * This function will check if the user exists in the LDAP directory and create it locally if it does not.
@@ -926,12 +940,15 @@ class ldap_plugin extends Plugin
 			$SQL->FROM( 'T_users__organization' );
 			$this->organizations = $DB->get_assoc( $SQL->get(), 'Load all organizations in cache array of LDAP plugin' );
 
-			// Convert all organization names to lowercase:
-			$this->organizations = array_map( 'utf8_strtolower', $this->organizations );
+			// Convert all organization names to lowercase and normalize them:
+			foreach( $this->organizations as $organization_ID => $organization_name )
+			{
+				$this->organizations[ $organization_ID ] = utf8_strtolower( Normalizer::normalize( $organization_name ) );
+			}
 		}
 
 		// Check if requested organization already exists in DB:
-		$org_ID = array_search( utf8_strtolower( $org_name ), $this->organizations );
+		$org_ID = array_search( utf8_strtolower( Normalizer::normalize( $org_name ) ), $this->organizations );
 
 		if( $org_ID === false )
 		{	// No organization in DB, Try to create new:
@@ -950,7 +967,7 @@ class ldap_plugin extends Plugin
 				$org_ID = $Organization->ID;
 
 				// Add new organization in cache array:
-				$this->organizations[ $org_ID ] = utf8_strtolower( $org_name );
+				$this->organizations[ $org_ID ] = utf8_strtolower( Normalizer::normalize( $org_name ) );
 
 				$this->debug_log( sprintf( 'New organization "%s" has been created in system', $org_name ) );
 			}
