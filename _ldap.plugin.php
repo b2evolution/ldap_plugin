@@ -1170,7 +1170,7 @@ class ldap_plugin extends Plugin
 	 * @param string Group name
 	 * @param string Group usage: 'primary', 'secondary'
 	 */
-	function usergroup_create( $template_group_ID, $group_name, $usage = 'primary' )
+	function & usergroup_create( $template_group_ID, $group_name, $usage = 'primary' )
 	{
 		global $app_version;
 
