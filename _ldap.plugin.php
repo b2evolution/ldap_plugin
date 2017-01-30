@@ -931,12 +931,12 @@ class ldap_plugin extends Plugin
 			// Convert all organization names to lowercase and normalize them:
 			foreach( $this->organizations as $organization_ID => $organization_name )
 			{
-				$this->organizations[ $organization_ID ] = $this->normalize( $organization_name );
+				$this->organizations[ $organization_ID ] = utf8_strtolower( $this->normalize( $organization_name ) );
 			}
 		}
 
 		// Check if requested organization already exists in DB:
-		$org_ID = array_search( $this->normalize( $org_name ), $this->organizations );
+		$org_ID = array_search( utf8_strtolower( $this->normalize( $org_name ) ), $this->organizations );
 
 		if( $org_ID === false )
 		{	// No organization in DB, Try to create new:
@@ -955,7 +955,7 @@ class ldap_plugin extends Plugin
 				$org_ID = $Organization->ID;
 
 				// Add new organization in cache array:
-				$this->organizations[ $org_ID ] = $this->normalize( $org_name );
+				$this->organizations[ $org_ID ] = utf8_strtolower( $this->normalize( $org_name ) );
 
 				$this->debug_log( sprintf( 'New organization "%s" has been created in system', $org_name ) );
 			}
@@ -1282,15 +1282,18 @@ class ldap_plugin extends Plugin
 
 	/**
 	 * Normalizes the input provided and returns the normalized string
+	 * 
+	 * TODO: the normalize() function should be removed from the plugin in a few months when people
+	 *       have has time to upgrade to a B2evolution core that includes the normalizer_normalize() function.
 	 *
 	 * @param string The input string to normalize
 	 * @return string|boolean The normalized string or FALSE if an error occurred
 	 */
 	function normalize( $string )
 	{
-		if( class_exists( 'Normalizer' ) )
+		if( function_exists( 'normalizer_normalize' ) )
 		{	// Use system function to normalize, It is allowed on PHP > 5.3.0 and if PECL extenssion intl >= 1.0.0
-			$r = Normalizer::normalize( $string );
+			$r = normalizer_normalize( $string );
 		}
 		else
 		{	// Replace letters:
@@ -1397,7 +1400,7 @@ class ldap_plugin extends Plugin
 			$r = strtr( $string, $transliteration );
 		}
 
-		return utf8_strtolower( $r );
+		return $r;
 	}
 }
 ?>
