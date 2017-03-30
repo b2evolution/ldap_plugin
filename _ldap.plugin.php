@@ -95,6 +95,7 @@ class ldap_plugin extends Plugin
 				'note' => T_('This plugin can search a username sequentially on several different LDAP servers / with different LDAP queries.'),
 				'type' => version_compare( $app_version, '6.6.5', '>' ) ? 'array:array:string' : 'array',
 				'max_count' => 10,
+				'entries_label' => T_('Server'),
 				'entries' => array(
 					'disabled' => array(
 						'label' => T_('Disabled'),
