@@ -1292,12 +1292,14 @@ class ldap_plugin extends Plugin
 	 */
 	function normalize( $string )
 	{
+		/*
+		yura: I commented this code because function normalizer_normalize() doesn't convert all chars to english version as expected.
 		if( function_exists( 'normalizer_normalize' ) )
 		{	// Use system function to normalize, It is allowed on PHP > 5.3.0 and if PECL extenssion intl >= 1.0.0
 			$r = normalizer_normalize( $string );
 		}
-		else
-		{	// Replace letters:
+		else*/
+		// Replace letters:
 			$transliteration = array(
 				'Ĳ'=>'I','Ö'=>'O','Œ'=>'O','Ü'=>'U','ä'=>'a','æ'=>'a',
 				'ĳ'=>'i','ö'=>'o','œ'=>'o','ü'=>'u','ß'=>'s','ſ'=>'s',
@@ -1399,7 +1401,6 @@ class ldap_plugin extends Plugin
 				'ā'=>'a','ţ'=>'t'
 			);
 			$r = strtr( $string, $transliteration );
-		}
 
 		return $r;
 	}
